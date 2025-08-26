@@ -1,8 +1,5 @@
+<!-- templates/dashboard.html -->
 {% extends "base.html" %}
-
-{% block extra_head %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.4/socket.io.js"></script>
-{% endblock %}
 
 {% block content %}
 <div class="container">
@@ -33,15 +30,15 @@
                 <button onclick="testVoice()" class="btn" style="width: auto; padding: 8px 16px; font-size: 14px;">
                     🔊 Test Voice
                 </button>
-                <div id="connection-status" style="padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">
-                    Connecting...
+                <div id="connection-status" style="padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; background: #d4edda; color: #155724;">
+                    🟢 Polling Active
                 </div>
             </div>
         </div>
         <div id="scan-list">
             {% if scans %}
                 {% for scan in scans %}
-                <div class="scan-item">
+                <div class="scan-item" data-scan-id="{{ scan.scan_id }}">
                     <h4>{{ scan.faculty_name }}</h4>
                     <div class="meta">
                         {{ scan.faculty_department }} • {{ scan.faculty_email }}<br>
@@ -57,27 +54,13 @@
 </div>
 
 <script>
-    // Test voice function
-    function testVoice() {
-        enableVoice();
-        speak("Voice system is working correctly. Faculty attendance system is ready.");
-    }
+    // Voice functionality
+    let voiceEnabled = false;
+    let lastProcessedScan = null;
     
-    // Update connection status display
-    function updateConnectionStatus(status, message) {
-        const statusElement = document.getElementById('connection-status');
-        statusElement.textContent = message;
-        statusElement.style.background = status === 'connected' ? '#d4edda' : 
-                                       status === 'connecting' ? '#fff3cd' : '#f8d7da';
-        statusElement.style.color = status === 'connected' ? '#155724' : 
-                                   status === 'connecting' ? '#856404' : '#721c24';
-    }
-    
-    // Initialize Socket.IO
-    const socket = io();
-    
-    // Text-to-Speech setup
     function speak(text) {
+        console.log('Attempting to speak:', text);
+        
         if ('speechSynthesis' in window) {
             // Cancel any ongoing speech
             speechSynthesis.cancel();
@@ -87,87 +70,150 @@
             utterance.pitch = 1;
             utterance.volume = 0.8;
             
-            // Add error handling
             utterance.onerror = function(event) {
-                console.error('Speech synthesis error:', event);
+                console.error('Speech error:', event);
+            };
+            
+            utterance.onstart = function(event) {
+                console.log('Speech started:', text);
             };
             
             utterance.onend = function(event) {
-                console.log('Speech synthesis completed');
+                console.log('Speech completed');
             };
             
-            // Small delay to ensure speech synthesis is ready
-            setTimeout(() => {
+            try {
                 speechSynthesis.speak(utterance);
-                console.log('Speaking:', text);
-            }, 100);
+                return true;
+            } catch (error) {
+                console.error('Speech synthesis failed:', error);
+                return false;
+            }
         } else {
-            console.warn('Speech synthesis not supported');
+            console.warn('Speech synthesis not supported in this browser');
+            alert('Voice announcement: ' + text);
+            return false;
         }
     }
     
-    // Enable voice on user interaction (required by browsers)
-    let voiceEnabled = false;
     function enableVoice() {
         if (!voiceEnabled) {
-            speak("Voice enabled for attendance system");
-            voiceEnabled = true;
-            console.log('Voice enabled');
+            const success = speak("Voice system activated for attendance monitoring");
+            if (success) {
+                voiceEnabled = true;
+                console.log('✅ Voice enabled successfully');
+            }
         }
     }
     
-    // Enable voice on first click
-    document.addEventListener('click', enableVoice, { once: true });
+    function testVoice() {
+        console.log('🔊 Test voice button clicked');
+        enableVoice();
+        setTimeout(() => {
+            speak("Voice test successful. Faculty attendance system is ready.");
+        }, 100);
+    }
     
-    // Handle new scan events
-    socket.on('new_scan', function(data) {
-        console.log('New scan received:', data);
+    // Polling-based real-time updates
+    let lastScanTimestamp = 0;
+    
+    function checkForNewScans() {
+        fetch('/api/recent-scans')
+            .then(response => response.json())
+            .then(scans => {
+                if (scans.length > 0) {
+                    const latestScan = scans[0];
+                    
+                    // Check if this is a new scan
+                    if (latestScan.timestamp > lastScanTimestamp) {
+                        lastScanTimestamp = latestScan.timestamp;
+                        
+                        // Only process if this is not the initial load
+                        if (lastProcessedScan !== null) {
+                            addNewScanToList(latestScan);
+                            announceNewScan(latestScan);
+                        }
+                        
+                        lastProcessedScan = latestScan.scan_id;
+                    }
+                }
+                
+                // Update stats
+                updateStats();
+            })
+            .catch(error => {
+                console.error('Error checking for new scans:', error);
+                updateConnectionStatus('error', '🔴 Connection Error');
+            });
+    }
+    
+    function addNewScanToList(scanData) {
+        const scanList = document.getElementById('scan-list');
+        
+        // Check if scan already exists
+        const existing = document.querySelector(`[data-scan-id="${scanData.scan_id}"]`);
+        if (existing) {
+            return; // Don't duplicate
+        }
         
         // Create new scan item
-        const scanList = document.getElementById('scan-list');
         const newScanItem = document.createElement('div');
         newScanItem.className = 'scan-item new-scan';
+        newScanItem.setAttribute('data-scan-id', scanData.scan_id);
         newScanItem.innerHTML = `
-            <h4>${data.faculty_name}</h4>
+            <h4>${scanData.faculty_name}</h4>
             <div class="meta">
-                ${data.faculty_department} • ${data.faculty_email}<br>
-                Scanned at: ${data.scanned_at}
+                ${scanData.faculty_department} • ${scanData.faculty_email}<br>
+                Scanned at: ${scanData.scanned_at}
             </div>
         `;
         
+        // Remove loading message if exists
+        const loadingMessage = scanList.querySelector('.loading');
+        if (loadingMessage) {
+            loadingMessage.remove();
+        }
+        
         // Insert at the top
-        if (scanList.firstChild && !scanList.firstChild.classList.contains('loading')) {
+        if (scanList.firstChild) {
             scanList.insertBefore(newScanItem, scanList.firstChild);
         } else {
-            // Remove loading message if exists
-            const loadingMessage = scanList.querySelector('.loading');
-            if (loadingMessage) {
-                loadingMessage.remove();
-            }
             scanList.appendChild(newScanItem);
         }
         
-        // Update stats immediately
-        updateStats();
-        
-        // Voice announcement with better timing
-        const time = new Date(data.scanned_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        const voiceText = `Faculty ${data.faculty_name} scanned successfully at ${time}`;
-        
-        // Ensure voice is enabled and speak
-        if (voiceEnabled) {
-            setTimeout(() => speak(voiceText), 200);
-        } else {
-            // Try to enable voice and speak
-            enableVoice();
-            setTimeout(() => speak(voiceText), 500);
-        }
-        
-        // Remove new-scan class after animation
+        // Remove animation class after 2 seconds
         setTimeout(() => {
             newScanItem.classList.remove('new-scan');
         }, 2000);
-    });
+        
+        console.log('✅ New scan added to dashboard:', scanData.faculty_name);
+    }
+    
+    function announceNewScan(scanData) {
+        if (voiceEnabled) {
+            const time = new Date(scanData.scanned_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const message = `Faculty ${scanData.faculty_name} scanned successfully at ${time}`;
+            
+            setTimeout(() => {
+                speak(message);
+            }, 300);
+        } else {
+            console.log('🔇 Voice not enabled. Click "Test Voice" button to enable.');
+        }
+    }
+    
+    function updateConnectionStatus(status, message) {
+        const statusElement = document.getElementById('connection-status');
+        if (statusElement) {
+            statusElement.textContent = message;
+            statusElement.style.background = status === 'connected' ? '#d4edda' : 
+                                           status === 'polling' ? '#d4edda' : 
+                                           status === 'connecting' ? '#fff3cd' : '#f8d7da';
+            statusElement.style.color = status === 'connected' ? '#155724' : 
+                                       status === 'polling' ? '#155724' :
+                                       status === 'connecting' ? '#856404' : '#721c24';
+        }
+    }
     
     // Update statistics
     function updateStats() {
@@ -177,43 +223,48 @@
                 document.getElementById('total-faculty').textContent = data.total_faculty;
                 document.getElementById('total-scans').textContent = data.total_scans;
                 document.getElementById('today-scans').textContent = data.today_scans;
+                
+                updateConnectionStatus('polling', '🟢 Polling Active');
             })
-            .catch(error => console.error('Error updating stats:', error));
+            .catch(error => {
+                console.error('Error updating stats:', error);
+                updateConnectionStatus('error', '🔴 Connection Error');
+            });
     }
     
-    // Initial stats load
-    updateStats();
-    
-    // Update stats every 30 seconds
-    setInterval(updateStats, 30000);
-    
-    // Connection status with retry logic
-    socket.on('connect', function() {
-        console.log('✅ Connected to server - Real-time updates active');
-        updateConnectionStatus('connected', '🟢 Connected');
-        document.title = '📊 Dashboard - Connected';
-    });
-    
-    socket.on('disconnect', function() {
-        console.log('❌ Disconnected from server - Attempting to reconnect...');
-        updateConnectionStatus('connecting', '🟡 Reconnecting...');
-        document.title = '📊 Dashboard - Reconnecting...';
-    });
-    
-    socket.on('connect_error', function(error) {
-        console.error('Connection error:', error);
-        updateConnectionStatus('error', '🔴 Connection Error');
-    });
-    
-    // Initialize connection status
-    updateConnectionStatus('connecting', '🟡 Connecting...');
-    
-    // Test WebSocket connection on page load
-    setTimeout(() => {
-        if (!socket.connected) {
-            console.warn('WebSocket not connected. Refreshing connection...');
-            socket.connect();
+    // Initialize the dashboard
+    function initializeDashboard() {
+        console.log('🚀 Dashboard initializing...');
+        
+        // Set initial lastScanTimestamp to current time to avoid processing old scans as new
+        if (document.querySelectorAll('.scan-item').length > 0) {
+            // If there are existing scans, get the timestamp of the most recent one
+            fetch('/api/recent-scans')
+                .then(response => response.json())
+                .then(scans => {
+                    if (scans.length > 0) {
+                        lastScanTimestamp = scans[0].timestamp;
+                        lastProcessedScan = scans[0].scan_id;
+                    }
+                    console.log('📊 Dashboard initialized with existing scans');
+                })
+                .catch(error => console.error('Error initializing:', error));
         }
-    }, 2000);
+        
+        // Enable voice on first click anywhere
+        document.addEventListener('click', enableVoice, { once: true });
+        
+        // Start polling for new scans every 2 seconds
+        setInterval(checkForNewScans, 2000);
+        
+        // Update stats immediately and then every 10 seconds
+        updateStats();
+        setInterval(updateStats, 10000);
+        
+        console.log('✅ Dashboard fully loaded and polling started');
+    }
+    
+    // Start everything when page loads
+    document.addEventListener('DOMContentLoaded', initializeDashboard);
 </script>
 {% endblock %}
