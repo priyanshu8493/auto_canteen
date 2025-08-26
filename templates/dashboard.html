@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.4/socket.io.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <h1>📊 Vendor Dashboard</h1>
+        <p>Real-time faculty attendance monitoring</p>
+    </div>
+    
+    <div class="stats" id="stats">
+        <div class="stat-card">
+            <div class="number" id="total-faculty">-</div>
+            <div class="label">Total Faculty</div>
+        </div>
+        <div class="stat-card">
+            <div class="number" id="total-scans">-</div>
+            <div class="label">Total Scans</div>
+        </div>
+        <div class="stat-card">
+            <div class="number" id="today-scans">-</div>
+            <div class="label">Today's Scans</div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2>Recent Scans</h2>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button onclick="testVoice()" class="btn" style="width: auto; padding: 8px 16px; font-size: 14px;">
+                    🔊 Test Voice
+                </button>
+                <div id="connection-status" style="padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: bold;">
+                    Connecting...
+                </div>
+            </div>
+        </div>
+        <div id="scan-list">
+            {% if scans %}
+                {% for scan in scans %}
+                <div class="scan-item">
+                    <h4>{{ scan.faculty_name }}</h4>
+                    <div class="meta">
+                        {{ scan.faculty_department }} • {{ scan.faculty_email }}<br>
+                        Scanned at: {{ scan.scanned_at }}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="loading">No scans recorded yet...</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+    // Test voice function
+    function testVoice() {
+        enableVoice();
+        speak("Voice system is working correctly. Faculty attendance system is ready.");
+    }
+    
+    // Update connection status display
+    function updateConnectionStatus(status, message) {
+        const statusElement = document.getElementById('connection-status');
+        statusElement.textContent = message;
+        statusElement.style.background = status === 'connected' ? '#d4edda' : 
+                                       status === 'connecting' ? '#fff3cd' : '#f8d7da';
+        statusElement.style.color = status === 'connected' ? '#155724' : 
+                                   status === 'connecting' ? '#856404' : '#721c24';
+    }
+    
+    // Initialize Socket.IO
+    const socket = io();
+    
+    // Text-to-Speech setup
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            // Cancel any ongoing speech
+            speechSynthesis.cancel();
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 0.9;
+            utterance.pitch = 1;
+            utterance.volume = 0.8;
+            
+            // Add error handling
+            utterance.onerror = function(event) {
+                console.error('Speech synthesis error:', event);
+            };
+            
+            utterance.onend = function(event) {
+                console.log('Speech synthesis completed');
+            };
+            
+            // Small delay to ensure speech synthesis is ready
+            setTimeout(() => {
+                speechSynthesis.speak(utterance);
+                console.log('Speaking:', text);
+            }, 100);
+        } else {
+            console.warn('Speech synthesis not supported');
+        }
+    }
+    
+    // Enable voice on user interaction (required by browsers)
+    let voiceEnabled = false;
+    function enableVoice() {
+        if (!voiceEnabled) {
+            speak("Voice enabled for attendance system");
+            voiceEnabled = true;
+            console.log('Voice enabled');
+        }
+    }
+    
+    // Enable voice on first click
+    document.addEventListener('click', enableVoice, { once: true });
+    
+    // Handle new scan events
+    socket.on('new_scan', function(data) {
+        console.log('New scan received:', data);
+        
+        // Create new scan item
+        const scanList = document.getElementById('scan-list');
+        const newScanItem = document.createElement('div');
+        newScanItem.className = 'scan-item new-scan';
+        newScanItem.innerHTML = `
+            <h4>${data.faculty_name}</h4>
+            <div class="meta">
+                ${data.faculty_department} • ${data.faculty_email}<br>
+                Scanned at: ${data.scanned_at}
+            </div>
+        `;
+        
+        // Insert at the top
+        if (scanList.firstChild && !scanList.firstChild.classList.contains('loading')) {
+            scanList.insertBefore(newScanItem, scanList.firstChild);
+        } else {
+            // Remove loading message if exists
+            const loadingMessage = scanList.querySelector('.loading');
+            if (loadingMessage) {
+                loadingMessage.remove();
+            }
+            scanList.appendChild(newScanItem);
+        }
+        
+        // Update stats immediately
+        updateStats();
+        
+        // Voice announcement with better timing
+        const time = new Date(data.scanned_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const voiceText = `Faculty ${data.faculty_name} scanned successfully at ${time}`;
+        
+        // Ensure voice is enabled and speak
+        if (voiceEnabled) {
+            setTimeout(() => speak(voiceText), 200);
+        } else {
+            // Try to enable voice and speak
+            enableVoice();
+            setTimeout(() => speak(voiceText), 500);
+        }
+        
+        // Remove new-scan class after animation
+        setTimeout(() => {
+            newScanItem.classList.remove('new-scan');
+        }, 2000);
+    });
+    
+    // Update statistics
+    function updateStats() {
+        fetch('/api/stats')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('total-faculty').textContent = data.total_faculty;
+                document.getElementById('total-scans').textContent = data.total_scans;
+                document.getElementById('today-scans').textContent = data.today_scans;
+            })
+            .catch(error => console.error('Error updating stats:', error));
+    }
+    
+    // Initial stats load
+    updateStats();
+    
+    // Update stats every 30 seconds
+    setInterval(updateStats, 30000);
+    
+    // Connection status with retry logic
+    socket.on('connect', function() {
+        console.log('✅ Connected to server - Real-time updates active');
+        updateConnectionStatus('connected', '🟢 Connected');
+        document.title = '📊 Dashboard - Connected';
+    });
+    
+    socket.on('disconnect', function() {
+        console.log('❌ Disconnected from server - Attempting to reconnect...');
+        updateConnectionStatus('connecting', '🟡 Reconnecting...');
+        document.title = '📊 Dashboard - Reconnecting...';
+    });
+    
+    socket.on('connect_error', function(error) {
+        console.error('Connection error:', error);
+        updateConnectionStatus('error', '🔴 Connection Error');
+    });
+    
+    // Initialize connection status
+    updateConnectionStatus('connecting', '🟡 Connecting...');
+    
+    // Test WebSocket connection on page load
+    setTimeout(() => {
+        if (!socket.connected) {
+            console.warn('WebSocket not connected. Refreshing connection...');
+            socket.connect();
+        }
+    }, 2000);
+</script>
+{% endblock %}

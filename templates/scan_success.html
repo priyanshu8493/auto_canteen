@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="card">
+        <div class="header">
+            <h1>✅ Scan Successful!</h1>
+            <p>Your attendance has been recorded</p>
+        </div>
+        
+        <div class="success-message">
+            <h3>Welcome, {{ faculty.name }}!</h3>
+            <p><strong>Department:</strong> {{ faculty.department }}</p>
+            <p><strong>Email:</strong> {{ faculty.email }}</p>
+            <p><strong>Time:</strong> <span id="current-time"></span></p>
+        </div>
+        
+        <div style="text-align: center;">
+            <p style="color: #666; margin-top: 20px;">
+                You can now close this window or scan again anytime.
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Update current time
+    function updateTime() {
+        const now = new Date();
+        document.getElementById('current-time').textContent = now.toLocaleString();
+    }
+    updateTime();
+    setInterval(updateTime, 1000);
+</script>
+{% endblock %}
