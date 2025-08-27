@@ -1,6 +1,7 @@
 import os
 import uuid
-from datetime import datetime
+# MODIFIED LINE BELOW
+from datetime import datetime, timedelta 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
 from flask_sqlalchemy import SQLAlchemy
 
@@ -16,7 +17,7 @@ db = SQLAlchemy(app)
 class Faculty(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False)
-    phone_number = db.Column(db.String(10), unique=True, nullable=False) # CHANGED
+    phone_number = db.Column(db.String(10), unique=True, nullable=False) 
     department = db.Column(db.String(100), nullable=False)
     registration_date = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -39,11 +40,11 @@ def index():
 def register():
     if request.method == 'POST':
         name = request.form.get('name')
-        phone_number = request.form.get('phone_number') # CHANGED
+        phone_number = request.form.get('phone_number')
         department = request.form.get('department')
         
         # Check if faculty already exists
-        existing_faculty = Faculty.query.filter_by(phone_number=phone_number).first() # CHANGED
+        existing_faculty = Faculty.query.filter_by(phone_number=phone_number).first()
         if existing_faculty:
             # Faculty already registered, store their ID in cookie and redirect
             response = make_response(redirect(url_for('scan_success')))
@@ -51,7 +52,7 @@ def register():
             return response
         
         # Create new faculty
-        faculty = Faculty(name=name, phone_number=phone_number, department=department) # CHANGED
+        faculty = Faculty(name=name, phone_number=phone_number, department=department)
         db.session.add(faculty)
         db.session.commit()
         
@@ -69,26 +70,39 @@ def scan():
     faculty_id = request.cookies.get('faculty_id')
     
     if not faculty_id:
-        # Faculty not registered, redirect to registration
         return redirect(url_for('register'))
     
-    # Check if faculty exists in database
     faculty = Faculty.query.get(faculty_id)
     if not faculty:
-        # Invalid faculty ID, redirect to registration
         response = make_response(redirect(url_for('register')))
-        response.set_cookie('faculty_id', '', expires=0)  # Clear invalid cookie
+        response.set_cookie('faculty_id', '', expires=0)
         return response
+
+    # --- NEW LOGIC STARTS HERE ---
     
-    # Create scan record
+    # Check for the most recent scan for this faculty member
+    last_scan = ScanRecord.query.filter_by(faculty_id=faculty.id).order_by(ScanRecord.scanned_at.desc()).first()
+    
+    if last_scan:
+        time_since_last_scan = datetime.utcnow() - last_scan.scanned_at
+        if time_since_last_scan < timedelta(hours=24):
+            # If the last scan was within 24 hours, show an error page
+            next_scan_time = last_scan.scanned_at + timedelta(hours=24)
+            return render_template('already_scanned.html', 
+                                   faculty=faculty, 
+                                   last_scan=last_scan, 
+                                   next_scan_time=next_scan_time)
+
+    # --- NEW LOGIC ENDS HERE ---
+
+    # If no recent scan, proceed to record a new one
     scan_record = ScanRecord(faculty_id=faculty.id)
     db.session.add(scan_record)
     db.session.commit()
     
-    # Store latest scan for polling
     latest_scan = {
         'faculty_name': faculty.name,
-        'faculty_phone_number': faculty.phone_number, # CHANGED
+        'faculty_phone_number': faculty.phone_number,
         'faculty_department': faculty.department,
         'scanned_at': scan_record.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
         'scan_id': scan_record.id,
@@ -96,6 +110,8 @@ def scan():
     }
     
     return redirect(url_for('scan_success'))
+
+# ... (the rest of your app.py remains the same) ...
 
 @app.route('/scan-success')
 def scan_success():
@@ -119,7 +135,7 @@ def dashboard():
     for scan_record, faculty in recent_scans:
         scan_data.append({
             'faculty_name': faculty.name,
-            'faculty_phone_number': faculty.phone_number, # CHANGED
+            'faculty_phone_number': faculty.phone_number,
             'faculty_department': faculty.department,
             'scanned_at': scan_record.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
             'scan_id': scan_record.id
@@ -158,7 +174,7 @@ def get_recent_scans():
     for scan_record, faculty in recent_scans:
         scan_data.append({
             'faculty_name': faculty.name,
-            'faculty_phone_number': faculty.phone_number, # CHANGED
+            'faculty_phone_number': faculty.phone_number,
             'faculty_department': faculty.department,
             'scanned_at': scan_record.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
             'scan_id': scan_record.id,
