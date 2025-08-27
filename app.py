@@ -12,14 +12,14 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 # Database Models
+
 class Faculty(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
+    phone_number = db.Column(db.String(10), unique=True, nullable=False) # CHANGED
     department = db.Column(db.String(100), nullable=False)
     registration_date = db.Column(db.DateTime, default=datetime.utcnow)
     
-
     scan_records = db.relationship('ScanRecord', backref='faculty', lazy=True)
 
 class ScanRecord(db.Model):
@@ -39,11 +39,11 @@ def index():
 def register():
     if request.method == 'POST':
         name = request.form.get('name')
-        email = request.form.get('email')
+        phone_number = request.form.get('phone_number') # CHANGED
         department = request.form.get('department')
         
         # Check if faculty already exists
-        existing_faculty = Faculty.query.filter_by(email=email).first()
+        existing_faculty = Faculty.query.filter_by(phone_number=phone_number).first() # CHANGED
         if existing_faculty:
             # Faculty already registered, store their ID in cookie and redirect
             response = make_response(redirect(url_for('scan_success')))
@@ -51,7 +51,7 @@ def register():
             return response
         
         # Create new faculty
-        faculty = Faculty(name=name, email=email, department=department)
+        faculty = Faculty(name=name, phone_number=phone_number, department=department) # CHANGED
         db.session.add(faculty)
         db.session.commit()
         
@@ -88,7 +88,7 @@ def scan():
     # Store latest scan for polling
     latest_scan = {
         'faculty_name': faculty.name,
-        'faculty_email': faculty.email,
+        'faculty_phone_number': faculty.phone_number, # CHANGED
         'faculty_department': faculty.department,
         'scanned_at': scan_record.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
         'scan_id': scan_record.id,
@@ -119,7 +119,7 @@ def dashboard():
     for scan_record, faculty in recent_scans:
         scan_data.append({
             'faculty_name': faculty.name,
-            'faculty_email': faculty.email,
+            'faculty_phone_number': faculty.phone_number, # CHANGED
             'faculty_department': faculty.department,
             'scanned_at': scan_record.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
             'scan_id': scan_record.id
@@ -158,7 +158,7 @@ def get_recent_scans():
     for scan_record, faculty in recent_scans:
         scan_data.append({
             'faculty_name': faculty.name,
-            'faculty_email': faculty.email,
+            'faculty_phone_number': faculty.phone_number, # CHANGED
             'faculty_department': faculty.department,
             'scanned_at': scan_record.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
             'scan_id': scan_record.id,
