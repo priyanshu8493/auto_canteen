@@ -19,7 +19,7 @@ class Faculty(db.Model):
     department = db.Column(db.String(100), nullable=False)
     registration_date = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationship
+
     scan_records = db.relationship('ScanRecord', backref='faculty', lazy=True)
 
 class ScanRecord(db.Model):
@@ -27,7 +27,7 @@ class ScanRecord(db.Model):
     faculty_id = db.Column(db.String(36), db.ForeignKey('faculty.id'), nullable=False)
     scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# Global variable to store latest scan for real-time updates
+
 latest_scan = None
 
 # Routes
