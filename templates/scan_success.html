@@ -1,35 +1,15 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container">
-    <div class="card">
-        <div class="header">
-            <h1>✅ Scan Successful!</h1>
-            <p>Your attendance has been recorded</p>
-        </div>
-        
-        <div class="success-message">
-            <h3>Welcome, {{ faculty.name }}!</h3>
-            <p><strong>Department:</strong> {{ faculty.department }}</p>
-            <p><strong>Phone Number:</strong> {{ faculty.phone_number }}</p>
-            <p><strong>Time:</strong> <span id="current-time"></span></p>
-        </div>
-        
-        <div style="text-align: center;">
-            <p style="color: #666; margin-top: 20px;">
-                You can now close this window or scan again anytime.
-            </p>
-        </div>
+<div class="card" style="max-width: 500px; margin: 2rem auto; text-align: center;">
+    <div class="header">
+        <h1>✅ Meal Recorded!</h1>
+        <p>Your meal has been successfully recorded.</p>
+    </div>
+    
+    <div class="alert alert-success">
+        <p style="margin: 0;"><strong>Welcome, {{ faculty.name }}!</strong></p>
+        <p style="margin: 0.5rem 0 0 0;">Enjoy your lunch.</p>
     </div>
 </div>
-
-<script>
-    // Update current time
-    function updateTime() {
-        const now = new Date();
-        document.getElementById('current-time').textContent = now.toLocaleString();
-    }
-    updateTime();
-    setInterval(updateTime, 1000);
-</script>
 {% endblock %}

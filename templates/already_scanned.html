@@ -1,29 +1,17 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container">
-    <div class="card">
-        <div class="header">
-            <h1 style="color: #dc3545;">⚠️ Already Scanned</h1>
-            <p>{{ faculty.name }} already had lunch.</p>
-        </div>
-        
-        <div class="success-message" style="background-color: #fff3cd; border-color: #ffeeba; color: #856404;">
-            <h3>Scan Details</h3>
-            <p><strong>Name:</strong> {{ faculty.name }}</p>
-            <p><strong>Department:</strong> {{ faculty.department }}</p>
-            <p><strong>Last Scanned At:</strong> {{ last_scan.scanned_at.strftime('%-I:%M %p on %b %d, %Y') }}</p>
-        </div>
-        
-        <div style="text-align: center; margin-top: 20px;">
-            <p style="color: #333; font-size: 1.1em;">
-                You can be scanned again after 24 hours.
-            </p>
-            <p style="color: #666; margin-top: 10px;">
-                Next scan available after:<br>
-                <strong>{{ next_scan_time.strftime('%-I:%M %p on %b %d, %Y') }}</strong>
-            </p>
-        </div>
+<div class="card" style="max-width: 500px; margin: 2rem auto; text-align: center;">
+    <div class="header">
+        <h1 style="color: var(--danger-color);">⚠️ Already Served</h1>
+        <p>{{ faculty.name }} has already taken a meal today.</p>
+    </div>
+    
+    <div class="alert alert-warning">
+        <p style="margin: 0;"><strong>Last Meal At:</strong> {{ last_scan.scanned_at.strftime('%-I:%M %p') }}</p>
+        <p style="margin: 0.5rem 0 0 0;">
+            Next meal available after <strong>{{ next_scan_time.strftime('%-I:%M %p') }}</strong>.
+        </p>
     </div>
 </div>
 {% endblock %}
