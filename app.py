@@ -6,13 +6,13 @@ from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
-# CHANGED DATABASE NAME
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///canteen.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# Database Models
+# --- (Your Database Models remain the same) ---
+
 class Faculty(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False)
@@ -28,11 +28,13 @@ class ScanRecord(db.Model):
 
 latest_scan = None
 
-# Routes
+# --- Routes ---
+
 @app.route('/')
 def index():
     return redirect(url_for('dashboard'))
 
+# MODIFIED register() FUNCTION
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -42,7 +44,8 @@ def register():
         
         existing_faculty = Faculty.query.filter_by(phone_number=phone_number).first()
         if existing_faculty:
-            response = make_response(redirect(url_for('scan_success')))
+            # If faculty exists, log them in and redirect to the NEW success page
+            response = make_response(redirect(url_for('register_success'))) 
             response.set_cookie('faculty_id', existing_faculty.id, max_age=60*60*24*365)
             return response
         
@@ -50,11 +53,25 @@ def register():
         db.session.add(faculty)
         db.session.commit()
         
-        response = make_response(redirect(url_for('scan_success')))
+        # After creating new faculty, redirect to the NEW success page
+        response = make_response(redirect(url_for('register_success')))
         response.set_cookie('faculty_id', faculty.id, max_age=60*60*24*365)
         return response
     
     return render_template('register.html')
+
+# NEW ROUTE for registration success
+@app.route('/register-success')
+def register_success():
+    faculty_id = request.cookies.get('faculty_id')
+    if faculty_id:
+        faculty = Faculty.query.get(faculty_id)
+        if faculty:
+            return render_template('register_success.html', faculty=faculty)
+    # If cookie is somehow missing, send back to register
+    return redirect(url_for('register'))
+
+# --- (The rest of your app.py file, including scan(), dashboard(), etc., remains exactly the same) ---
 
 @app.route('/scan')
 def scan():

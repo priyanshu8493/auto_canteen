@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 500px; margin: 2rem auto; text-align: center;">
+    <div class="header">
+        <h1>✅ Registration Successful!</h1>
+        <p>Your profile has been created in the canteen system.</p>
+    </div>
+    
+    <div class="alert alert-success">
+        <p style="margin: 0;"><strong>Welcome, {{ faculty.name }}!</strong></p>
+        <p style="margin: 0.5rem 0 0 0;">You can now scan the QR code to record your meal.</p>
+    </div>
+</div>
+{% endblock %}
