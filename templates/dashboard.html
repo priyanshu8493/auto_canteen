@@ -164,13 +164,33 @@
                 if (scans.length > 0) lastScanTimestamp = scans[0].timestamp;
             });
         }
-        
+
         // Enable voice on first interaction
         document.body.addEventListener('click', () => speak('Voice system activated for meal tracking'), { once: true });
-        
+
         updateStats();
         setInterval(updateStats, 10000); // Update stats every 10 seconds
-        setInterval(checkForNewScans, 2000); // Check for new scans every 2 seconds
+
+        // --- Socket.IO integration ---
+        const script = document.createElement('script');
+        script.src = '/socket.io/socket.io.js';
+        script.onload = () => {
+            const socket = io();
+            socket.on('connect', () => {
+                updateConnectionStatus(false);
+            });
+            socket.on('disconnect', () => {
+                updateConnectionStatus(true);
+            });
+            socket.on('new_scan', (scanData) => {
+                addNewScanToList(scanData);
+                lastScanTimestamp = scanData.timestamp;
+            });
+        };
+        script.onerror = () => {
+            updateConnectionStatus(true);
+        };
+        document.body.appendChild(script);
     });
 </script>
 {% endblock %}

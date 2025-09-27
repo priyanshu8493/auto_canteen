@@ -1,8 +1,10 @@
+
 import os
 import uuid
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
 from flask_sqlalchemy import SQLAlchemy
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
@@ -10,8 +12,44 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///canteen.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+socketio = SocketIO(app)
+# --- Global state variables ---
+latest_scan = None
+meal_counter = 0
 
 # --- (Your Database Models remain the same) ---
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        phone_number = request.form.get('phone_number')
+        department = request.form.get('department')
+
+        existing_faculty = Faculty.query.filter_by(phone_number=phone_number).first()
+        if existing_faculty:
+            response = make_response(redirect(url_for('register_success')))
+            response.set_cookie('faculty_id', existing_faculty.id, max_age=60*60*24*365)
+            return response
+
+        faculty = Faculty(name=name, phone_number=phone_number, department=department)
+        db.session.add(faculty)
+        db.session.commit()
+
+        response = make_response(redirect(url_for('register_success')))
+        response.set_cookie('faculty_id', faculty.id, max_age=60*60*24*365)
+        return response
+
+    return render_template('register.html')
+
+# NEW ROUTE for registration success
+@app.route('/register-success')
+def register_success():
+    faculty_id = request.cookies.get('faculty_id')
+    if faculty_id:
+        faculty = Faculty.query.get(faculty_id)
+        if faculty:
+            return render_template('register_success.html', faculty=faculty)
+    return redirect(url_for('register'))
 
 class Faculty(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -25,51 +63,6 @@ class ScanRecord(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     faculty_id = db.Column(db.String(36), db.ForeignKey('faculty.id'), nullable=False)
     scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-latest_scan = None
-
-# --- Counter state ---
-meal_counter = 0
-
-# --- Routes ---
-
-@app.route('/')
-def index():
-    return redirect(url_for('dashboard'))
-
-# MODIFIED register() FUNCTION
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        name = request.form.get('name')
-        phone_number = request.form.get('phone_number')
-        department = request.form.get('department')
-        
-        existing_faculty = Faculty.query.filter_by(phone_number=phone_number).first()
-        if existing_faculty:
-            response = make_response(redirect(url_for('register_success'))) 
-            response.set_cookie('faculty_id', existing_faculty.id, max_age=60*60*24*365)
-            return response
-        
-        faculty = Faculty(name=name, phone_number=phone_number, department=department)
-        db.session.add(faculty)
-        db.session.commit()
-        
-        response = make_response(redirect(url_for('register_success')))
-        response.set_cookie('faculty_id', faculty.id, max_age=60*60*24*365)
-        return response
-    
-    return render_template('register.html')
-
-# NEW ROUTE for registration success
-@app.route('/register-success')
-def register_success():
-    faculty_id = request.cookies.get('faculty_id')
-    if faculty_id:
-        faculty = Faculty.query.get(faculty_id)
-        if faculty:
-            return render_template('register_success.html', faculty=faculty)
-    return redirect(url_for('register'))
 
 @app.route('/scan')
 def scan():
@@ -151,7 +144,7 @@ def get_recent_scans():
     scan_data = [{'faculty_name': f.name, 'faculty_phone_number': f.phone_number, 'faculty_department': f.department, 'scanned_at': sr.scanned_at.strftime('%Y-%m-%d %H:%M:%S'), 'scan_id': sr.id, 'timestamp': sr.scanned_at.timestamp()} for sr, f in recent_scans]
     return jsonify(scan_data)
 
-# --- NEW Counter Endpoints ---
+
 
 @app.route("/counter")
 def show_counter():
@@ -171,4 +164,4 @@ with app.app_context():
     db.create_all()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
