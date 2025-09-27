@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Meal Counter</title>
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 100px;
+        }
+        #count {
+            font-size: 100px;
+            margin: 20px;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 20px;
+            border: none;
+            border-radius: 10px;
+            background: white;
+            color: black;
+            cursor: pointer;
+        }
+    </style>
+    <script>
+        async function refreshCount() {
+            const res = await fetch("/api/counter");
+            const data = await res.json();
+            document.getElementById("count").innerText = data.count;
+        }
+        setInterval(refreshCount, 3000);
+    </script>
+</head>
+<body onload="refreshCount()">
+    <h1>Meal Counter</h1>
+    <div id="count">{{ count }}</div>
+    <form method="POST" action="/reset-counter">
+        <button type="submit">Reset Counter</button>
+    </form>
+</body>
+</html>

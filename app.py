@@ -28,6 +28,9 @@ class ScanRecord(db.Model):
 
 latest_scan = None
 
+# --- Counter state ---
+meal_counter = 0
+
 # --- Routes ---
 
 @app.route('/')
@@ -44,7 +47,6 @@ def register():
         
         existing_faculty = Faculty.query.filter_by(phone_number=phone_number).first()
         if existing_faculty:
-            # If faculty exists, log them in and redirect to the NEW success page
             response = make_response(redirect(url_for('register_success'))) 
             response.set_cookie('faculty_id', existing_faculty.id, max_age=60*60*24*365)
             return response
@@ -53,7 +55,6 @@ def register():
         db.session.add(faculty)
         db.session.commit()
         
-        # After creating new faculty, redirect to the NEW success page
         response = make_response(redirect(url_for('register_success')))
         response.set_cookie('faculty_id', faculty.id, max_age=60*60*24*365)
         return response
@@ -68,14 +69,11 @@ def register_success():
         faculty = Faculty.query.get(faculty_id)
         if faculty:
             return render_template('register_success.html', faculty=faculty)
-    # If cookie is somehow missing, send back to register
     return redirect(url_for('register'))
-
-# --- (The rest of your app.py file, including scan(), dashboard(), etc., remains exactly the same) ---
 
 @app.route('/scan')
 def scan():
-    global latest_scan
+    global latest_scan, meal_counter
     faculty_id = request.cookies.get('faculty_id')
     
     if not faculty_id:
@@ -107,6 +105,9 @@ def scan():
         'scan_id': scan_record.id,
         'timestamp': scan_record.scanned_at.timestamp()
     }
+
+    # --- Increment counter on successful scan ---
+    meal_counter += 1
     
     return redirect(url_for('scan_success'))
 
@@ -149,6 +150,22 @@ def get_recent_scans():
         .limit(20).all()
     scan_data = [{'faculty_name': f.name, 'faculty_phone_number': f.phone_number, 'faculty_department': f.department, 'scanned_at': sr.scanned_at.strftime('%Y-%m-%d %H:%M:%S'), 'scan_id': sr.id, 'timestamp': sr.scanned_at.timestamp()} for sr, f in recent_scans]
     return jsonify(scan_data)
+
+# --- NEW Counter Endpoints ---
+
+@app.route("/counter")
+def show_counter():
+    return render_template("counter.html", count=meal_counter)
+
+@app.route("/api/counter")
+def api_counter():
+    return jsonify({"count": meal_counter})
+
+@app.route("/reset-counter", methods=["POST"])
+def reset_counter():
+    global meal_counter
+    meal_counter = 0
+    return redirect(url_for("show_counter"))
 
 with app.app_context():
     db.create_all()
