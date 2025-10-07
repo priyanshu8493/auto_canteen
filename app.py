@@ -1,4 +1,3 @@
-
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -13,11 +12,34 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 socketio = SocketIO(app)
+
 # --- Global state variables ---
 latest_scan = None
 meal_counter = 0
 
-# --- (Your Database Models remain the same) ---
+# -----------------------------
+# DATABASE MODELS
+# -----------------------------
+class Faculty(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = db.Column(db.String(100), nullable=False)
+    phone_number = db.Column(db.String(10), unique=True, nullable=False)
+    department = db.Column(db.String(100), nullable=False)
+    registration_date = db.Column(db.DateTime, default=datetime.utcnow)
+    scan_records = db.relationship('ScanRecord', backref='faculty', lazy=True)
+
+class ScanRecord(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    faculty_id = db.Column(db.String(36), db.ForeignKey('faculty.id'), nullable=False)
+    scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# -----------------------------
+# ROUTES
+# -----------------------------
+@app.route('/')
+def home():
+    return redirect(url_for('dashboard'))
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -41,28 +63,19 @@ def register():
 
     return render_template('register.html')
 
-# NEW ROUTE for registration success
 @app.route('/register-success')
 def register_success():
     faculty_id = request.cookies.get('faculty_id')
     if faculty_id:
         faculty = Faculty.query.get(faculty_id)
         if faculty:
-            return render_template('register_success.html', faculty=faculty)
+            # ✅ Show success message on registration success
+            return render_template(
+                'success.html',
+                title="Registration Successful 🎉",
+                message=f"Faculty '{faculty.name}' registered successfully!"
+            )
     return redirect(url_for('register'))
-
-class Faculty(db.Model):
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = db.Column(db.String(100), nullable=False)
-    phone_number = db.Column(db.String(10), unique=True, nullable=False) 
-    department = db.Column(db.String(100), nullable=False)
-    registration_date = db.Column(db.DateTime, default=datetime.utcnow)
-    scan_records = db.relationship('ScanRecord', backref='faculty', lazy=True)
-
-class ScanRecord(db.Model):
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    faculty_id = db.Column(db.String(36), db.ForeignKey('faculty.id'), nullable=False)
-    scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 @app.route('/scan')
 def scan():
@@ -99,9 +112,9 @@ def scan():
         'timestamp': scan_record.scanned_at.timestamp()
     }
 
-    # --- Increment counter on successful scan ---
     meal_counter += 1
     
+    # ✅ Redirect to scan success page with message
     return redirect(url_for('scan_success'))
 
 @app.route('/scan-success')
@@ -110,7 +123,12 @@ def scan_success():
     if faculty_id:
         faculty = Faculty.query.get(faculty_id)
         if faculty:
-            return render_template('scan_success.html', faculty=faculty)
+            # ✅ Show scan complete message
+            return render_template(
+                'success.html',
+                title="Scan Complete ✅",
+                message=f"Meal recorded for '{faculty.name}' successfully!"
+            )
     return redirect(url_for('register'))
 
 @app.route('/dashboard')
@@ -120,7 +138,14 @@ def dashboard():
         .order_by(ScanRecord.scanned_at.desc())\
         .limit(50).all()
     
-    scan_data = [{'faculty_name': f.name, 'faculty_phone_number': f.phone_number, 'faculty_department': f.department, 'scanned_at': sr.scanned_at.strftime('%Y-%m-%d %H:%M:%S'), 'scan_id': sr.id} for sr, f in recent_scans]
+    scan_data = [{
+        'faculty_name': f.name,
+        'faculty_phone_number': f.phone_number,
+        'faculty_department': f.department,
+        'scanned_at': sr.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
+        'scan_id': sr.id
+    } for sr, f in recent_scans]
+
     return render_template('dashboard.html', scans=scan_data)
 
 @app.route('/api/stats')
@@ -141,10 +166,15 @@ def get_recent_scans():
         .join(Faculty, ScanRecord.faculty_id == Faculty.id)\
         .order_by(ScanRecord.scanned_at.desc())\
         .limit(20).all()
-    scan_data = [{'faculty_name': f.name, 'faculty_phone_number': f.phone_number, 'faculty_department': f.department, 'scanned_at': sr.scanned_at.strftime('%Y-%m-%d %H:%M:%S'), 'scan_id': sr.id, 'timestamp': sr.scanned_at.timestamp()} for sr, f in recent_scans]
+    scan_data = [{
+        'faculty_name': f.name,
+        'faculty_phone_number': f.phone_number,
+        'faculty_department': f.department,
+        'scanned_at': sr.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
+        'scan_id': sr.id,
+        'timestamp': sr.scanned_at.timestamp()
+    } for sr, f in recent_scans]
     return jsonify(scan_data)
-
-
 
 @app.route("/counter")
 def show_counter():
