@@ -1,138 +1,9 @@
-{% extends "base.html" %}
-
-{% block content %}
-<div class="header">
-    <h1>Dashboard</h1>
-    <p>Real-time faculty meal tracking</p>
-</div>
-
-<div class="stats" id="stats">
-    <div class="stat-card">
-        <div class="stat-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-        </div>
-        <div class="stat-info">
-            <div class="number" id="total-faculty">-</div>
-            <div class="label">Total Faculty</div>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-        </div>
-        <div class="stat-info">
-            <div class="number" id="total-scans">-</div>
-            <div class="label">Total Meals Served</div>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-        </div>
-        <div class="stat-info">
-            <div class="number" id="today-scans">-</div>
-            <div class="label">Meals Today</div>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-header">
-        <h2>Recent Scans</h2>
-        <div id="connection-status">🟢 Live</div>
-    </div>
-    <div id="scan-list">
-        {% if scans %}
-            {% for scan in scans %}
-            <div class="scan-item" data-scan-id="{{ scan.scan_id }}">
-                <div class="faculty-info">
-                    <span class="faculty-name">{{ scan.faculty_name }}</span>
-                    <span class="faculty-dept">{{ scan.faculty_department }}</span>
-                </div>
-                <div class="scan-time">{{ scan.scanned_at }}</div>
-            </div>
-            {% endfor %}
-        {% else %}
-            <div class="empty-state">No meals recorded yet...</div>
-        {% endif %}
-    </div>
-</div>
-
-{% block extra_head %}
-<style>
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
-    .stat-card { display: flex; align-items: center; background: var(--surface-color); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    .stat-icon { background-color: #e7f1ff; color: var(--primary-color); border-radius: 50%; width: 50px; height: 50px; display: grid; place-items: center; margin-right: 1rem; flex-shrink: 0; }
-    .stat-info .number { font-size: 2rem; font-weight: 700; color: var(--text-color); line-height: 1.1; }
-    .stat-info .label { font-size: 0.9rem; color: var(--muted-color); }
-    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color); }
-    .card-header h2 { font-size: 1.5rem; }
-    #connection-status { background-color: #d4edda; color: #155724; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
-    #connection-status.error { background-color: #f8d7da; color: #721c24; }
-    .scan-item { display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid var(--border-color); animation: fadeIn 0.5s ease-out; }
-    .scan-item:last-child { border-bottom: none; }
-    .scan-item.new-scan { background-color: #e7f1ff; border-left: 4px solid var(--primary-color); margin: 0 -1rem; padding-left: calc(1rem - 4px); }
-    .faculty-info .faculty-name { font-weight: 600; }
-    .faculty-info .faculty-dept { color: var(--muted-color); font-size: 0.9rem; margin-left: 0.5rem; }
-    .scan-time { color: var(--muted-color); font-size: 0.9rem; }
-    .empty-state { text-align: center; color: var(--muted-color); padding: 2rem; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-</style>
-{% endblock %}
-
 <script>
-    function speak(text) {
-        if ('speechSynthesis' in window) {
-            speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            speechSynthesis.speak(utterance);
-        }
-    }
-    
-    function testVoice() {
-        speak("Voice test successful. Canteen system is ready.");
-    }
-    
-    let lastScanTimestamp = 0;
-
-    function addNewScanToList(scanData) {
-        const scanList = document.getElementById('scan-list');
-        if (document.querySelector(`[data-scan-id="${scanData.scan_id}"]`)) return;
-
-        const newScanItem = document.createElement('div');
-        newScanItem.className = 'scan-item new-scan';
-        newScanItem.setAttribute('data-scan-id', scanData.scan_id);
-        newScanItem.innerHTML = `
-            <div class="faculty-info">
-                <span class="faculty-name">${scanData.faculty_name}</span>
-                <span class="faculty-dept">${scanData.faculty_department}</span>
-            </div>
-            <div class="scan-time">${scanData.scanned_at}</div>
-        `;
-
-        const emptyState = scanList.querySelector('.empty-state');
-        if (emptyState) emptyState.remove();
-
-        scanList.insertBefore(newScanItem, scanList.firstChild);
-        speak(`Faculty ${scanData.faculty_name} scanned successfully.`);
-
-        setTimeout(() => newScanItem.classList.remove('new-scan'), 2000);
-    }
-
-    function updateConnectionStatus(isError) {
-        const statusEl = document.getElementById('connection-status');
-        if (isError) {
-            statusEl.textContent = '🔴 Offline';
-            statusEl.classList.add('error');
-        } else {
-            statusEl.textContent = '🟢 Live';
-            statusEl.classList.remove('error');
-        }
-    }
+    // ... (keep all your existing functions the same) ...
 
     async function updateStats() {
         try {
-            const response = await fetch('/api/stats');
+            const response = await fetch('{{ url_for("stats", _external=False) }}');
             const data = await response.json();
             document.getElementById('total-faculty').textContent = data.total_faculty;
             document.getElementById('total-scans').textContent = data.total_scans;
@@ -146,7 +17,7 @@
 
     async function checkForNewScans() {
         try {
-            const response = await fetch('/api/recent-scans');
+            const response = await fetch('{{ url_for("get_recent_scans", _external=False) }}');
             const scans = await response.json();
             if (scans.length > 0 && scans[0].timestamp > lastScanTimestamp) {
                 addNewScanToList(scans[0]);
@@ -160,7 +31,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         // Initialize lastScanTimestamp from the latest scan on the page
         if (document.querySelectorAll('.scan-item').length > 0) {
-            fetch('/api/recent-scans').then(res => res.json()).then(scans => {
+            fetch('{{ url_for("get_recent_scans", _external=False) }}').then(res => res.json()).then(scans => {
                 if (scans.length > 0) lastScanTimestamp = scans[0].timestamp;
             });
         }
@@ -173,7 +44,7 @@
 
         // --- Socket.IO integration ---
         const script = document.createElement('script');
-        script.src = '/socket.io/socket.io.js';
+        script.src = '{{ url_for("static", filename="socket.io/socket.io.js", _external=False) }}';
         script.onload = () => {
             const socket = io();
             socket.on('connect', () => {
@@ -193,4 +64,3 @@
         document.body.appendChild(script);
     });
 </script>
-{% endblock %}

@@ -26,7 +26,7 @@
     </style>
     <script>
         async function refreshCount() {
-            const res = await fetch("/api/counter");
+            const res = await fetch("{{ url_for('api_counter', _external=False) }}");
             const data = await res.json();
             document.getElementById("count").innerText = data.count;
         }
@@ -36,7 +36,7 @@
 <body onload="refreshCount()">
     <h1>Meal Counter</h1>
     <div id="count">{{ count }}</div>
-    <form method="POST" action="/reset-counter">
+    <form method="POST" action="{{ url_for('reset_counter', _external=False) }}">
         <button type="submit">Reset Counter</button>
     </form>
 </body>
