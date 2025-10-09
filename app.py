@@ -156,7 +156,7 @@ def scan():
         db.session.add(scan_record)
         db.session.commit()
         
-        # Emit socket event for real-time updates
+        # Emit socket events for real-time updates
         latest_scan_data = {
             'faculty_name': faculty.name,
             'faculty_phone_number': faculty.phone_number,
@@ -166,11 +166,12 @@ def scan():
             'timestamp': scan_record.scanned_at.timestamp()
         }
         
-        socketio.emit('new_scan', latest_scan_data)
+        # Emit to all connected clients
+        socketio.emit('new_scan', latest_scan_data, namespace='/')
         
-        # Increment counter
+        # Increment counter and emit update
         current_count = increment_meal_counter()
-        socketio.emit('counter_update', {'count': current_count})
+        socketio.emit('counter_update', {'count': current_count}, namespace='/')
         
         return redirect(url_for('scan_success', _external=False))
         
@@ -190,15 +191,26 @@ def scan_success():
 @app.route('/dashboard')
 def dashboard():
     try:
+        print("Dashboard accessed")  # Debug log
+        
+        # Test database connection
+        faculty_count = Faculty.query.count()
+        scan_count = ScanRecord.query.count()
+        print(f"Faculty count: {faculty_count}, Scan count: {scan_count}")  # Debug log
+        
         recent_scans = db.session.query(ScanRecord, Faculty)\
             .join(Faculty, ScanRecord.faculty_id == Faculty.id)\
             .order_by(ScanRecord.scanned_at.desc())\
             .limit(50).all()
         
+        print(f"Found {len(recent_scans)} recent scans")  # Debug log
+        
         scan_data = [{'faculty_name': f.name, 'faculty_phone_number': f.phone_number, 'faculty_department': f.department, 'scanned_at': sr.scanned_at.strftime('%Y-%m-%d %H:%M:%S'), 'scan_id': sr.id} for sr, f in recent_scans]
+        
         return render_template('dashboard.html', scans=scan_data)
     except Exception as e:
-        return render_template('error.html', error="Failed to load dashboard")
+        print(f"Dashboard error: {e}")  # Debug log
+        return render_template('error.html', error=str(e))
 
 @app.route('/api/stats')
 def stats():
@@ -255,15 +267,23 @@ def reset_counter():
         counter.last_reset = datetime.utcnow()
         db.session.commit()
         
-        socketio.emit('counter_update', {'count': 0})
+        # Emit counter reset to all connected clients
+        socketio.emit('counter_update', {'count': 0}, namespace='/')
         return redirect(url_for("show_counter", _external=False))
     except Exception as e:
         db.session.rollback()
         return render_template('error.html', error="Failed to reset counter")
 
+# Socket.IO event handlers
 @socketio.on('connect')
 def handle_connect():
+    print(f"Client connected: {request.sid}")
+    # Send current counter value to newly connected client
     emit('counter_update', {'count': get_meal_counter().count})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print(f"Client disconnected: {request.sid}")
 
 # Initialize database
 with app.app_context():
@@ -271,6 +291,7 @@ with app.app_context():
         db.create_all()
         # Ensure counter exists
         get_meal_counter()
+        print("Database initialized successfully")
     except Exception as e:
         print(f"Database initialization error: {e}")
 

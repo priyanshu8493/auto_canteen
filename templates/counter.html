@@ -22,22 +22,201 @@
             background: white;
             color: black;
             cursor: pointer;
+            margin: 10px;
+        }
+        .controls {
+            margin-top: 20px;
+        }
+        #connection-status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .connected {
+            background-color: #28a745;
+            color: white;
+        }
+        .disconnected {
+            background-color: #dc3545;
+            color: white;
         }
     </style>
     <script>
-        async function refreshCount() {
-            const res = await fetch("{{ url_for('api_counter', _external=False) }}");
-            const data = await res.json();
-            document.getElementById("count").innerText = data.count;
+        // Speech synthesis function
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                speechSynthesis.speak(utterance);
+            }
         }
-        setInterval(refreshCount, 3000);
+
+        // Voice test function
+        function testVoice() {
+            speak("Voice test successful. Counter system is ready.");
+        }
+
+        let currentCount = {{ count }};
+        let socket = null;
+
+        // Update connection status
+        function updateConnectionStatus(isConnected) {
+            const statusEl = document.getElementById('connection-status');
+            if (isConnected) {
+                statusEl.textContent = '🟢 Live - Connected to Dashboard';
+                statusEl.className = 'connected';
+            } else {
+                statusEl.textContent = '🔴 Offline - No Connection';
+                statusEl.className = 'disconnected';
+            }
+        }
+
+        // Handle counter updates with voice feedback
+        function handleCounterUpdate(newCount) {
+            const countElement = document.getElementById('count');
+            
+            // Only speak if count increased (not on reset or initial load)
+            if (newCount > currentCount) {
+                const mealDifference = newCount - currentCount;
+                if (mealDifference === 1) {
+                    speak("One meal served. Total meals: " + newCount);
+                } else {
+                    speak(mealDifference + " meals served. Total meals: " + newCount);
+                }
+                
+                // Visual feedback for new meals
+                countElement.style.color = '#28a745';
+                setTimeout(() => {
+                    countElement.style.color = 'white';
+                }, 1000);
+            }
+            
+            currentCount = newCount;
+            countElement.innerText = newCount;
+        }
+
+        // Refresh count from API
+        async function refreshCount() {
+            try {
+                const res = await fetch("{{ url_for('api_counter', _external=False) }}");
+                const data = await res.json();
+                handleCounterUpdate(data.count);
+                updateConnectionStatus(true);
+            } catch (error) {
+                console.error('Error fetching count:', error);
+                updateConnectionStatus(false);
+            }
+        }
+
+        // Initialize Socket.IO for real-time updates
+        function initializeSocketIO() {
+            try {
+                // Load Socket.IO client
+                const script = document.createElement('script');
+                script.src = '/auto_canteen/socket.io/socket.io.js';
+                script.onload = function() {
+                    socket = io();
+                    
+                    socket.on('connect', function() {
+                        console.log('Connected to server');
+                        updateConnectionStatus(true);
+                        speak("Counter connected to live updates");
+                    });
+                    
+                    socket.on('disconnect', function() {
+                        console.log('Disconnected from server');
+                        updateConnectionStatus(false);
+                    });
+                    
+                    socket.on('counter_update', function(data) {
+                        console.log('Counter update received:', data);
+                        handleCounterUpdate(data.count);
+                    });
+                    
+                    socket.on('new_scan', function(scanData) {
+                        console.log('New scan detected:', scanData);
+                        // Optional: Announce new faculty scan
+                        // speak("New meal recorded for " + scanData.faculty_name);
+                    });
+                };
+                
+                script.onerror = function() {
+                    console.log('Failed to load Socket.IO');
+                    updateConnectionStatus(false);
+                };
+                
+                document.head.appendChild(script);
+            } catch (error) {
+                console.error('Socket.IO initialization error:', error);
+                updateConnectionStatus(false);
+            }
+        }
+
+        // Reset counter with confirmation
+        function resetCounter() {
+            if (confirm('Are you sure you want to reset the counter to zero?')) {
+                speak("Counter reset to zero");
+                document.getElementById('reset-form').submit();
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Counter page loaded');
+            
+            // Initialize with current count
+            handleCounterUpdate({{ count }});
+            
+            // Set up periodic refresh (fallback if Socket.IO fails)
+            setInterval(refreshCount, 5000);
+            
+            // Initialize Socket.IO for real-time updates
+            initializeSocketIO();
+            
+            // Enable voice on first interaction
+            document.body.addEventListener('click', function() {
+                speak("Counter system activated. Current count: " + currentCount);
+            }, { once: true });
+            
+            // Test voice button handler
+            document.getElementById('test-voice-btn').addEventListener('click', function(e) {
+                e.preventDefault();
+                testVoice();
+            });
+        });
     </script>
 </head>
-<body onload="refreshCount()">
+<body>
     <h1>Meal Counter</h1>
     <div id="count">{{ count }}</div>
-    <form method="POST" action="{{ url_for('reset_counter', _external=False) }}">
-        <button type="submit">Reset Counter</button>
-    </form>
+    
+    <div class="controls">
+        <form id="reset-form" method="POST" action="{{ url_for('reset_counter', _external=False) }}">
+            <button type="button" onclick="resetCounter()">Reset Counter</button>
+        </form>
+        <button id="test-voice-btn">Test Voice</button>
+    </div>
+    
+    <div id="connection-status" class="disconnected">
+        🔴 Connecting...
+    </div>
+
+    <script>
+        // Fallback Socket.IO initialization if dynamic loading fails
+        if (typeof io !== 'undefined') {
+            // Socket.IO already loaded, initialize directly
+            const socket = io();
+            socket.on('connect', function() {
+                updateConnectionStatus(true);
+            });
+            socket.on('counter_update', function(data) {
+                handleCounterUpdate(data.count);
+            });
+        }
+    </script>
 </body>
 </html>
