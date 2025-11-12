@@ -1,0 +1,22 @@
+2025-10-07 10:05:37,190 [INFO] auto_canteen - Starting app on 0.0.0.0:5000 debug=False
+2025-10-07 10:05:42,495 [ERROR] auto_canteen - Error rendering index.html
+Traceback (most recent call last):
+  File "/Users/macbook/auto_canteen/app.py", line 62, in index
+    return render_template("index.html")
+  File "/Users/macbook/auto_canteen/venv/lib/python3.10/site-packages/flask/templating.py", line 149, in render_template
+    template = app.jinja_env.get_or_select_template(template_name_or_list)
+  File "/Users/macbook/auto_canteen/venv/lib/python3.10/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
+    return self.get_template(template_name_or_list, parent, globals)
+  File "/Users/macbook/auto_canteen/venv/lib/python3.10/site-packages/jinja2/environment.py", line 1016, in get_template
+    return self._load_template(name, globals)
+  File "/Users/macbook/auto_canteen/venv/lib/python3.10/site-packages/jinja2/environment.py", line 975, in _load_template
+    template = self.loader.load(self, name, self.make_globals(globals))
+  File "/Users/macbook/auto_canteen/venv/lib/python3.10/site-packages/jinja2/loaders.py", line 126, in load
+    source, filename, uptodate = self.get_source(environment, name)
+  File "/Users/macbook/auto_canteen/venv/lib/python3.10/site-packages/flask/templating.py", line 65, in get_source
+    return self._get_source_fast(environment, template)
+  File "/Users/macbook/auto_canteen/venv/lib/python3.10/site-packages/flask/templating.py", line 99, in _get_source_fast
+    raise TemplateNotFound(template)
+jinja2.exceptions.TemplateNotFound: index.html
+2025-10-07 10:05:42,841 [WARNING] auto_canteen - 404: path=/favicon.ico, remote_addr=127.0.0.1
+2025-10-07 10:05:53,426 [WARNING] auto_canteen - 404: path=/dashboard, remote_addr=127.0.0.1

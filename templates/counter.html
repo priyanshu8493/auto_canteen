@@ -81,18 +81,26 @@
         let voiceEnabled = true;
         let currentCount = {{ count }};
         let socket = null;
+        let audioInitialized = false;
 
         // Initialize audio system
         function initAudio() {
+            if (audioInitialized) return;
+            audioInitialized = true;
+            
+            console.log('Initializing audio system...');
+            console.log('Is secure context:', window.isSecureContext);
+            console.log('Protocol:', window.location.protocol);
+            
             // Try to create audio context (required for some browsers)
             try {
                 if (window.AudioContext || window.webkitAudioContext) {
                     const AudioContext = window.AudioContext || window.webkitAudioContext;
                     audioContext = new AudioContext();
-                    console.log('Audio context initialized');
+                    console.log('Audio context initialized successfully');
                 }
             } catch (e) {
-                console.log('Audio context not supported:', e);
+                console.log('Audio context initialization failed:', e);
             }
             
             // Test if speech synthesis is available
@@ -103,18 +111,30 @@
                 return;
             }
             
+            console.log('Speech synthesis available, waiting for voices...');
+            
             // Check if speech synthesis is actually working
-            setTimeout(() => {
+            // Try multiple times as voices may load asynchronously
+            let voiceCheckCount = 0;
+            const checkVoices = () => {
+                voiceCheckCount++;
                 const voices = speechSynthesis.getVoices();
-                if (voices.length === 0) {
-                    console.log('No voices available');
+                console.log(`Voice check ${voiceCheckCount}: ${voices.length} voices found`);
+                
+                if (voices.length === 0 && voiceCheckCount < 5) {
+                    // Retry after a delay
+                    setTimeout(checkVoices, 500);
+                } else if (voices.length === 0) {
+                    console.log('No voices available after multiple attempts');
                     voiceEnabled = false;
-                    updateVoiceStatus('No voice packages installed');
+                    updateVoiceStatus('No voice packages - Click button to enable');
                 } else {
-                    console.log('Voices available:', voices.length);
-                    updateVoiceStatus('Voice ready - Click to activate');
+                    console.log('Voices loaded successfully:', voices.length);
+                    updateVoiceStatus('Voice ready - Click button to activate');
                 }
-            }, 100);
+            };
+            
+            checkVoices();
         }
 
         // Update voice status display
@@ -173,6 +193,16 @@
             }
             
             try {
+                // Resume audio context if suspended (required for Raspberry Pi)
+                if (audioContext && audioContext.state === 'suspended') {
+                    console.log('Resuming suspended audio context...');
+                    audioContext.resume().then(() => {
+                        console.log('Audio context resumed');
+                    }).catch(e => {
+                        console.log('Failed to resume audio context:', e);
+                    });
+                }
+                
                 // Cancel any ongoing speech
                 speechSynthesis.cancel();
                 
@@ -183,13 +213,15 @@
                 
                 // Try to select a better voice
                 const voices = speechSynthesis.getVoices();
+                console.log('Available voices for synthesis:', voices.length);
+                
                 if (voices.length > 0) {
-                    // Prefer female voices (often clearer)
-                    const femaleVoice = voices.find(voice => 
-                        voice.name.toLowerCase().includes('female') || 
-                        voice.lang.includes('en')
+                    // Prefer English voices
+                    const enVoice = voices.find(voice => 
+                        voice.lang.startsWith('en-') || voice.lang === 'en'
                     );
-                    utterance.voice = femaleVoice || voices[0];
+                    utterance.voice = enVoice || voices[0];
+                    console.log('Selected voice:', utterance.voice ? utterance.voice.name : 'default');
                 }
                 
                 utterance.onstart = function() {
@@ -213,6 +245,7 @@
                 };
                 
                 speechSynthesis.speak(utterance);
+                console.log('Speech synthesis initiated for:', text);
                 
             } catch (error) {
                 console.log('Speech synthesis failed:', error);
@@ -300,14 +333,27 @@
         // Initialize Socket.IO for real-time updates
         function initializeSocketIO() {
             try {
-                socket = io({
-                    transports: ['websocket', 'polling'] // Fallback transport
-                });
+                // Configure Socket.IO for reverse proxy environments
+                const socketConfig = {
+                    transports: ['websocket', 'polling'],
+                    reconnection: true,
+                    reconnectionDelay: 1000,
+                    reconnectionDelayMax: 5000,
+                    reconnectionAttempts: Infinity,
+                    // For Nginx reverse proxy with Cloudflare
+                    path: window.location.pathname + 'socket.io/',
+                    secure: window.location.protocol === 'https:',
+                    rejectUnauthorized: false
+                };
+                
+                console.log('Initializing Socket.IO with config:', socketConfig);
+                socket = io(socketConfig);
                 
                 socket.on('connect', function() {
-                    console.log('Connected to server');
+                    console.log('Connected to server via Socket.IO');
                     updateConnectionStatus(true);
-                    if (voiceEnabled) {
+                    // Only speak if voice is already enabled
+                    if (voiceEnabled && audioInitialized) {
                         speak("Counter connected");
                     }
                 });
@@ -324,6 +370,11 @@
                 
                 socket.on('new_scan', function(scanData) {
                     console.log('New scan detected:', scanData);
+                });
+                
+                socket.on('connect_error', function(error) {
+                    console.log('Socket.IO connection error:', error);
+                    updateConnectionStatus(false);
                 });
                 
             } catch (error) {
@@ -356,17 +407,44 @@
 
         // Enable audio on user interaction (required for autoplay)
         function enableAudio() {
+            console.log('Enabling audio...');
+            console.log('Audio context state:', audioContext ? audioContext.state : 'no context');
+            
+            // Resume audio context if it exists and is suspended
             if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume();
+                audioContext.resume().then(() => {
+                    console.log('Audio context resumed successfully');
+                }).catch(e => {
+                    console.log('Failed to resume audio context:', e);
+                });
             }
+            
+            // Initialize if not done yet
+            if (!audioInitialized) {
+                initAudio();
+            }
+            
             // Test voice system
-            speak("Audio activated");
-            updateVoiceStatus('Voice activated - System ready');
+            if (voiceEnabled) {
+                speak("Audio activated. System ready for voice announcements.");
+                updateVoiceStatus('Voice activated - System ready');
+            } else {
+                console.log('Voice not available, using fallback alerts');
+                playBeep();
+                playWebAudioBeep();
+                showVisualAlert();
+                updateVoiceStatus('Voice not available - Using visual alerts');
+            }
         }
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Counter page loaded');
+            console.log('Browser capabilities:');
+            console.log('  - Secure context:', window.isSecureContext);
+            console.log('  - Protocol:', window.location.protocol);
+            console.log('  - Speech Synthesis:', !!window.speechSynthesis);
+            console.log('  - Web Audio API:', !!(window.AudioContext || window.webkitAudioContext));
             
             // Initialize audio systems
             initAudio();
@@ -380,21 +458,34 @@
             // Initialize Socket.IO for real-time updates
             initializeSocketIO();
             
-            // Enable audio on first user interaction (required for autoplay)
-            document.addEventListener('click', enableAudio, { once: true });
-            document.addEventListener('touchstart', enableAudio, { once: true });
+            // Enable audio on first user interaction (required for autoplay in modern browsers)
+            // Try multiple triggers for Raspberry Pi compatibility
+            const enableAudioOnce = {once: true, passive: true};
             
-            // Test voice button handler
-            document.getElementById('test-voice-btn').addEventListener('click', function(e) {
-                e.preventDefault();
-                testVoice();
-            });
+            document.addEventListener('click', enableAudio, enableAudioOnce);
+            document.addEventListener('touchstart', enableAudio, enableAudioOnce);
+            document.addEventListener('keydown', enableAudio, enableAudioOnce);
             
-            // Manual audio enable button
-            document.getElementById('enable-audio-btn').addEventListener('click', function(e) {
-                e.preventDefault();
-                enableAudio();
-            });
+            // Buttons event handlers
+            const testVoiceBtn = document.getElementById('test-voice-btn');
+            if (testVoiceBtn) {
+                testVoiceBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Test voice button clicked');
+                    testVoice();
+                });
+            }
+            
+            const enableAudioBtn = document.getElementById('enable-audio-btn');
+            if (enableAudioBtn) {
+                enableAudioBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Enable audio button clicked');
+                    enableAudio();
+                });
+            }
+            
+            console.log('Counter page initialization complete');
         });
     </script>
 </head>

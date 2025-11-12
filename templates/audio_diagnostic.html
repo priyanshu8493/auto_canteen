@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auto Canteen - Audio System Diagnostic</title>
+    <style>
+        body {
+            font-family: Courier, monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4ec9b0;
+            border-bottom: 2px solid #4ec9b0;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #9cdcfe;
+            margin-top: 30px;
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #666;
+            background-color: #252526;
+        }
+        .status.ok {
+            border-left-color: #4ec9b0;
+            background-color: #1a3a2f;
+        }
+        .status.warning {
+            border-left-color: #dcdcaa;
+            background-color: #3a3a1a;
+        }
+        .status.error {
+            border-left-color: #f48771;
+            background-color: #3a1a1a;
+        }
+        .label {
+            color: #9cdcfe;
+            font-weight: bold;
+        }
+        .value {
+            color: #ce9178;
+        }
+        button {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-family: Courier, monospace;
+        }
+        button:hover {
+            background-color: #005a9e;
+        }
+        .console {
+            background-color: #1e1e1e;
+            border: 1px solid #3e3e42;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 2px;
+        }
+        .log-info {
+            color: #9cdcfe;
+        }
+        .log-success {
+            color: #4ec9b0;
+        }
+        .log-warning {
+            color: #dcdcaa;
+        }
+        .log-error {
+            color: #f48771;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔊 Auto Canteen Audio System Diagnostic</h1>
+    
+    <h2>Browser Environment</h2>
+    <div id="env-status"></div>
+    
+    <h2>Audio API Support</h2>
+    <div id="audio-status"></div>
+    
+    <h2>Voice Synthesis Status</h2>
+    <div id="voice-status"></div>
+    
+    <h2>Network Status</h2>
+    <div id="network-status"></div>
+    
+    <h2>Test Controls</h2>
+    <div>
+        <button onclick="testAudioContext()">Test Audio Context</button>
+        <button onclick="testSpeechSynthesis()">Test Speech Synthesis</button>
+        <button onclick="testNetwork()">Test Network</button>
+        <button onclick="clearLogs()">Clear Logs</button>
+    </div>
+    
+    <h2>Diagnostic Console</h2>
+    <div class="console" id="console"></div>
+
+    <script>
+        const diagnosticLogs = [];
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = `[${timestamp}] ${message}`;
+            diagnosticLogs.push({message: entry, type: type});
+            updateConsole();
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        function updateConsole() {
+            const consoleDiv = document.getElementById('console');
+            consoleDiv.innerHTML = diagnosticLogs.map(entry => 
+                `<div class="log-entry log-${entry.type}">${entry.message}</div>`
+            ).join('');
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+        
+        function clearLogs() {
+            diagnosticLogs.length = 0;
+            updateConsole();
+        }
+        
+        function getStatusClass(success) {
+            return success ? 'ok' : 'error';
+        }
+        
+        function createStatus(label, value, success = null) {
+            const className = success === null ? '' : getStatusClass(success);
+            return `<div class="status ${className}"><span class="label">${label}:</span> <span class="value">${value}</span></div>`;
+        }
+        
+        // Environment checks
+        function checkEnvironment() {
+            log('Checking browser environment...', 'info');
+            
+            const checks = {
+                'Secure Context (HTTPS)': window.isSecureContext,
+                'Protocol': window.location.protocol === 'https:',
+                'User Agent': !!navigator.userAgent,
+                'Local Storage': (() => {
+                    try {
+                        const test = '__test__';
+                        localStorage.setItem(test, test);
+                        localStorage.removeItem(test);
+                        return true;
+                    } catch(e) {
+                        return false;
+                    }
+                })()
+            };
+            
+            let html = '';
+            for (const [key, value] of Object.entries(checks)) {
+                html += createStatus(key, value ? '✅ Yes' : '❌ No', value);
+            }
+            
+            document.getElementById('env-status').innerHTML = html;
+            
+            if (window.isSecureContext) {
+                log('✅ Secure context confirmed (HTTPS)', 'success');
+            } else {
+                log('❌ NOT in secure context - Audio APIs may be blocked', 'error');
+            }
+        }
+        
+        // Audio API checks
+        function checkAudioAPIs() {
+            log('Checking audio APIs...', 'info');
+            
+            const checks = {
+                'Web Audio API': !!(window.AudioContext || window.webkitAudioContext),
+                'Speech Synthesis': !!window.speechSynthesis,
+                'Audio Element': !!document.createElement('audio').canPlayType,
+                'getUserMedia': !!navigator.mediaDevices?.getUserMedia
+            };
+            
+            let html = '';
+            for (const [key, value] of Object.entries(checks)) {
+                html += createStatus(key, value ? '✅ Supported' : '❌ Not supported', value);
+            }
+            
+            document.getElementById('audio-status').innerHTML = html;
+            
+            Object.entries(checks).forEach(([key, value]) => {
+                if (value) {
+                    log(`✅ ${key} is supported`, 'success');
+                } else {
+                    log(`❌ ${key} is NOT supported`, 'warning');
+                }
+            });
+        }
+        
+        // Voice synthesis checks
+        function checkVoiceSynthesis() {
+            log('Checking voice synthesis...', 'info');
+            
+            if (!window.speechSynthesis) {
+                document.getElementById('voice-status').innerHTML = createStatus(
+                    'Speech Synthesis', '❌ Not available', false
+                );
+                log('❌ Speech Synthesis API not available', 'error');
+                return;
+            }
+            
+            let html = '';
+            
+            // Check voices
+            const voices = speechSynthesis.getVoices();
+            html += createStatus('Voices Available', `${voices.length} voice(s)`, voices.length > 0);
+            
+            if (voices.length > 0) {
+                log(`✅ Found ${voices.length} available voices`, 'success');
+                voices.forEach((voice, i) => {
+                    log(`  Voice ${i + 1}: ${voice.name} (${voice.lang})`, 'info');
+                });
+            } else {
+                log('❌ No voices available - install espeak or festival on Linux', 'error');
+            }
+            
+            // Check synthesis support
+            html += createStatus('Synthesis Support', '✅ Supported', true);
+            
+            document.getElementById('voice-status').innerHTML = html;
+        }
+        
+        // Network checks
+        function checkNetwork() {
+            log('Checking network status...', 'info');
+            
+            let html = '';
+            
+            // Check online status
+            const online = navigator.onLine;
+            html += createStatus('Network Status', online ? '✅ Online' : '❌ Offline', online);
+            
+            // Check current URL
+            html += createStatus('Current URL', window.location.href, true);
+            
+            // Check hostname
+            html += createStatus('Hostname', window.location.hostname, true);
+            
+            // Check protocol
+            html += createStatus('Protocol', window.location.protocol, window.location.protocol === 'https:');
+            
+            document.getElementById('network-status').innerHTML = html;
+            
+            log(`Network Status: ${online ? 'Online' : 'Offline'}`, online ? 'success' : 'error');
+        }
+        
+        // Test functions
+        function testAudioContext() {
+            log('Testing Web Audio API...', 'info');
+            
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) {
+                    log('❌ Web Audio API not available', 'error');
+                    return;
+                }
+                
+                const audioContext = new AudioContext();
+                log(`✅ Audio context created, state: ${audioContext.state}`, 'success');
+                
+                // Try to create a simple sound
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 1000;
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.5);
+                
+                log('✅ Test beep played (1000Hz, 500ms)', 'success');
+            } catch (e) {
+                log(`❌ Web Audio test failed: ${e.message}`, 'error');
+            }
+        }
+        
+        function testSpeechSynthesis() {
+            log('Testing Speech Synthesis...', 'info');
+            
+            if (!window.speechSynthesis) {
+                log('❌ Speech Synthesis not available', 'error');
+                return;
+            }
+            
+            try {
+                speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance('Testing voice synthesis. If you hear this, voice is working.');
+                utterance.rate = 0.9;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                
+                const voices = speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    utterance.voice = voices[0];
+                    log(`✅ Using voice: ${voices[0].name}`, 'success');
+                }
+                
+                utterance.onstart = () => {
+                    log('✅ Speech started', 'success');
+                };
+                
+                utterance.onend = () => {
+                    log('✅ Speech completed', 'success');
+                };
+                
+                utterance.onerror = (e) => {
+                    log(`❌ Speech error: ${e.error}`, 'error');
+                };
+                
+                speechSynthesis.speak(utterance);
+                log('Speech synthesis initiated', 'info');
+            } catch (e) {
+                log(`❌ Speech Synthesis test failed: ${e.message}`, 'error');
+            }
+        }
+        
+        function testNetwork() {
+            log('Testing network connectivity...', 'info');
+            
+            const tests = [
+                { name: 'API Counter', url: '/auto_canteen/api/counter' },
+                { name: 'API Stats', url: '/auto_canteen/api/stats' }
+            ];
+            
+            tests.forEach(test => {
+                fetch(test.url)
+                    .then(r => {
+                        if (r.ok) {
+                            log(`✅ ${test.name}: ${r.status}`, 'success');
+                        } else {
+                            log(`⚠️  ${test.name}: ${r.status} ${r.statusText}`, 'warning');
+                        }
+                        return r.json();
+                    })
+                    .then(data => {
+                        log(`   Response: ${JSON.stringify(data).substring(0, 100)}...`, 'info');
+                    })
+                    .catch(e => {
+                        log(`❌ ${test.name}: ${e.message}`, 'error');
+                    });
+            });
+        }
+        
+        // Run all checks on load
+        window.addEventListener('load', () => {
+            log('Auto Canteen Audio Diagnostic Started', 'info');
+            checkEnvironment();
+            checkAudioAPIs();
+            checkVoiceSynthesis();
+            checkNetwork();
+            log('Diagnostic checks completed', 'success');
+        });
+        
+        // Handle voice availability change
+        if (window.speechSynthesis) {
+            speechSynthesis.addEventListener('voiceschanged', () => {
+                log('✅ Voice list updated', 'info');
+                checkVoiceSynthesis();
+            });
+        }
+    </script>
+</body>
+</html>

@@ -16,9 +16,18 @@ app.config['APPLICATION_ROOT'] = APPLICATION_ROOT
 app.config['PREFERRED_URL_SCHEME'] = 'https'
 
 db = SQLAlchemy(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='threading',
+    # Ensure Socket.IO works with Nginx reverse proxy
+    ping_timeout=60,
+    ping_interval=25,
+    engineio_logger=False,
+    socketio_logger=False
+)
 
-# --- WSGI Middleware for subpath handling ---
+# --- WSGI Middleware for subpath handling and reverse proxy support ---
 class ReverseProxied:
     def __init__(self, app, script_name=None):
         self.app = app
@@ -31,6 +40,15 @@ class ReverseProxied:
             path_info = environ['PATH_INFO']
             if path_info.startswith(script_name):
                 environ['PATH_INFO'] = path_info[len(script_name):]
+        
+        # Handle reverse proxy headers for HTTPS detection
+        # This is crucial for Nginx + Cloudflare setups
+        if 'HTTP_X_FORWARDED_PROTO' in environ:
+            environ['wsgi.url_scheme'] = environ['HTTP_X_FORWARDED_PROTO']
+        
+        if 'HTTP_X_FORWARDED_FOR' in environ:
+            environ['REMOTE_ADDR'] = environ['HTTP_X_FORWARDED_FOR'].split(',')[0]
+        
         return self.app(environ, start_response)
 
 app.wsgi_app = ReverseProxied(app.wsgi_app, APPLICATION_ROOT)
@@ -86,8 +104,12 @@ def get_latest_scan_from_db():
 @app.before_request
 def before_request():
     # Handle reverse proxy and ensure proper URL generation
-    if request.headers.get('X-Forwarded-Proto') == 'http':
-        return redirect(request.url.replace('http://', 'https://', 1), code=301)
+    # Note: Cloudflare always uses HTTPS, so we don't force redirect
+    proto = request.headers.get('X-Forwarded-Proto', request.scheme)
+    if proto == 'http' and not app.debug:
+        # Only redirect in production if explicitly on http
+        secure_url = request.url.replace('http://', 'https://', 1)
+        return redirect(secure_url, code=301)
 
 # --- Routes ---
 @app.route('/register', methods=['GET', 'POST'])
@@ -250,6 +272,13 @@ def show_counter():
         return render_template("counter.html", count=counter.count)
     except Exception as e:
         return render_template('error.html', error="Failed to load counter")
+
+@app.route("/audio-diagnostic")
+def audio_diagnostic():
+    try:
+        return render_template("audio_diagnostic.html")
+    except Exception as e:
+        return render_template('error.html', error="Failed to load audio diagnostic")
 
 @app.route("/api/counter")
 def api_counter():

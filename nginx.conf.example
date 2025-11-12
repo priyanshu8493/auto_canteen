@@ -1,0 +1,86 @@
+# Example Nginx configuration for auto_canteen with Cloudflare
+# This ensures proper HTTPS handling and Socket.IO support
+# Place this in your Nginx sites-available directory and enable it
+
+upstream flask_app {
+    server 127.0.0.1:5000;
+    # Add more servers if you have multiple instances
+}
+
+# HTTP to HTTPS redirect (Cloudflare will handle the initial HTTPS)
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS server block (Cloudflare will route here)
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+    
+    # SSL certificates (if using self-signed, adjust paths)
+    # If using Cloudflare, you may use Cloudflare's SSL or your own
+    ssl_certificate /etc/ssl/certs/your-cert.crt;
+    ssl_certificate_key /etc/ssl/private/your-key.key;
+    
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    
+    # Client body size for uploads
+    client_max_body_size 10M;
+    
+    # Root location for auto_canteen subpath
+    location /auto_canteen/ {
+        # Proxy settings
+        proxy_pass http://flask_app;
+        proxy_http_version 1.1;
+        
+        # Headers for reverse proxy
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        
+        # WebSocket support (CRITICAL for Socket.IO)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Connection "Upgrade";
+        
+        # Timeout settings for long connections
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # Buffering settings
+        proxy_buffering off;
+        proxy_request_buffering off;
+        
+        # Cloudflare compatibility
+        proxy_cache_bypass $http_upgrade;
+    }
+    
+    # Specifically handle Socket.IO paths
+    location /auto_canteen/socket.io {
+        proxy_pass http://flask_app/socket.io;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+    }
+    
+    # Health check endpoint (optional)
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+}
