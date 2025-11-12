@@ -184,7 +184,7 @@
             }
         }
 
-        // Speech synthesis with better error handling
+        // Speech synthesis with better error handling and Raspberry Pi support
         function speak(text) {
             if (!voiceEnabled) {
                 console.log('Voice disabled, using visual feedback only');
@@ -207,7 +207,7 @@
                 speechSynthesis.cancel();
                 
                 const utterance = new SpeechSynthesisUtterance(text);
-                utterance.rate = 0.9; // Slower for better understanding
+                utterance.rate = 1.0; // Normal speed
                 utterance.pitch = 1.0;
                 utterance.volume = 1.0;
                 
@@ -222,6 +222,8 @@
                     );
                     utterance.voice = enVoice || voices[0];
                     console.log('Selected voice:', utterance.voice ? utterance.voice.name : 'default');
+                } else {
+                    console.log('WARNING: No voices found, speech may not work');
                 }
                 
                 utterance.onstart = function() {
@@ -236,12 +238,9 @@
                 
                 utterance.onerror = function(event) {
                     console.log('Speech error:', event.error);
-                    voiceEnabled = false;
-                    updateVoiceStatus('Voice error - using visual alerts');
-                    // Fallback to beep and visual alert
-                    playBeep();
-                    playWebAudioBeep();
-                    showVisualAlert();
+                    console.log('Trying alternative TTS method...');
+                    // Try fallback TTS via API
+                    speakViaAPI(text);
                 };
                 
                 speechSynthesis.speak(utterance);
@@ -249,10 +248,30 @@
                 
             } catch (error) {
                 console.log('Speech synthesis failed:', error);
-                voiceEnabled = false;
-                // Fallback methods
-                playBeep();
-                playWebAudioBeep();
+                console.log('Trying alternative TTS method...');
+                // Try fallback TTS via API
+                speakViaAPI(text);
+            }
+        }
+
+        // Fallback: Use server-side TTS if browser speech fails
+        function speakViaAPI(text) {
+            console.log('Using server-side TTS fallback...');
+            try {
+                const audioElement = new Audio();
+                const ttsUrl = `{{ url_for('api_speak', _external=False) }}?text=${encodeURIComponent(text)}`;
+                audioElement.src = ttsUrl;
+                audioElement.play().then(() => {
+                    console.log('Server TTS playback started');
+                    updateVoiceStatus('Speaking (Server TTS)...');
+                }).catch(e => {
+                    console.log('Server TTS playback failed:', e);
+                    console.log('All TTS methods failed, using visual alert only');
+                    updateVoiceStatus('Voice unavailable - visual alerts only');
+                    showVisualAlert();
+                });
+            } catch (e) {
+                console.log('Server TTS API call failed:', e);
                 showVisualAlert();
             }
         }

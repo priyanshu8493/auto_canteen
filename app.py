@@ -303,6 +303,79 @@ def reset_counter():
         db.session.rollback()
         return render_template('error.html', error="Failed to reset counter")
 
+@app.route("/api/speak")
+def api_speak():
+    """Generate speech audio using system text-to-speech"""
+    try:
+        text = request.args.get('text', 'Error')
+        
+        # Try to use available TTS systems
+        import subprocess
+        import tempfile
+        
+        # Try espeak first (most common on Raspberry Pi)
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+                temp_file = f.name
+            
+            # Use espeak to generate speech
+            subprocess.run(['espeak', '-w', temp_file, text], check=True, timeout=10)
+            
+            # Read and return the audio file
+            with open(temp_file, 'rb') as f:
+                audio_data = f.read()
+            
+            # Clean up temp file
+            os.unlink(temp_file)
+            
+            from flask import send_file
+            from io import BytesIO
+            return send_file(BytesIO(audio_data), mimetype='audio/wav', cache_timeout=0)
+        
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # espeak not available, try festival
+            try:
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+                    temp_file = f.name
+                
+                # Use festival to generate speech
+                subprocess.run(['festival', '--tts'], input=text.encode(), check=True, timeout=10)
+                
+                # If festival succeeds but doesn't output to file, try text2wave
+                try:
+                    with open(temp_file, 'w') as f:
+                        f.write(f"(SayText \"{text}\")")
+                    
+                    subprocess.run(
+                        ['text2wave', temp_file, '-o', temp_file + '.wav'],
+                        check=True,
+                        timeout=10
+                    )
+                    
+                    with open(temp_file + '.wav', 'rb') as f:
+                        audio_data = f.read()
+                    
+                    os.unlink(temp_file)
+                    os.unlink(temp_file + '.wav')
+                    
+                    from flask import send_file
+                    from io import BytesIO
+                    return send_file(BytesIO(audio_data), mimetype='audio/wav', cache_timeout=0)
+                except:
+                    pass
+                
+                os.unlink(temp_file)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+        
+        # If we get here, no TTS system is available
+        print("WARNING: No TTS system available (espeak or festival not installed)")
+        return jsonify({'error': 'TTS not available'}), 501
+        
+    except Exception as e:
+        print(f"TTS error: {e}")
+        return jsonify({'error': 'TTS generation failed'}), 500
+
 # Socket.IO event handlers
 @socketio.on('connect')
 def handle_connect():
