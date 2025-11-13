@@ -166,13 +166,13 @@ def scan():
             response.set_cookie('faculty_id', '', expires=0)
             return response
 
-        last_scan = ScanRecord.query.filter_by(faculty_id=faculty.id).order_by(ScanRecord.scanned_at.desc()).first()
-        
-        if last_scan:
-            time_since_last_scan = datetime.utcnow() - last_scan.scanned_at
-            if time_since_last_scan < timedelta(hours=24):
-                next_scan_time = last_scan.scanned_at + timedelta(hours=24)
-                return render_template('already_scanned.html', faculty=faculty, last_scan=last_scan, next_scan_time=next_scan_time)
+        # NOTE: 24-hour scan constraint removed to allow multiple scans per day
+        # Previous constraint code:
+        # last_scan = ScanRecord.query.filter_by(faculty_id=faculty.id).order_by(ScanRecord.scanned_at.desc()).first()
+        # if last_scan:
+        #     time_since_last_scan = datetime.utcnow() - last_scan.scanned_at
+        #     if time_since_last_scan < timedelta(hours=24):
+        #         return render_template('already_scanned.html', ...)
 
         scan_record = ScanRecord(faculty_id=faculty.id)
         db.session.add(scan_record)
