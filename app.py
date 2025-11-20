@@ -207,7 +207,7 @@ def scan():
         
     except Exception as e:
         db.session.rollback()
-        return render_template('error.html', error="Scan failed. Please try again.")
+        return render_template('success.html', title="Error", message="Scan failed. Please try again.")
 
 @app.route('/scan-success')
 def scan_success():
@@ -240,7 +240,7 @@ def dashboard():
         return render_template('dashboard.html', scans=scan_data)
     except Exception as e:
         print(f"Dashboard error: {e}")  # Debug log
-        return render_template('error.html', error=str(e))
+        return render_template('success.html', title="Error", message=str(e))
 
 @app.route('/api/stats')
 def stats():
@@ -280,14 +280,14 @@ def show_counter():
         counter = get_meal_counter()
         return render_template("counter.html", count=counter.count)
     except Exception as e:
-        return render_template('error.html', error="Failed to load counter")
+        return render_template('success.html', title="Error", message="Failed to load counter")
 
 @app.route("/audio-diagnostic")
 def audio_diagnostic():
     try:
         return render_template("audio_diagnostic.html")
     except Exception as e:
-        return render_template('error.html', error="Failed to load audio diagnostic")
+        return render_template('success.html', title="Error", message="Failed to load audio diagnostic")
 
 @app.route("/api/counter")
 def api_counter():
@@ -310,7 +310,7 @@ def reset_counter():
         return redirect(url_for("show_counter", _external=False))
     except Exception as e:
         db.session.rollback()
-        return render_template('error.html', error="Failed to reset counter")
+        return render_template('success.html', title="Error", message="Failed to reset counter")
 
 @app.route("/api/speak")
 def api_speak():
