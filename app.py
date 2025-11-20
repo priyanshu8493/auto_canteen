@@ -174,6 +174,14 @@ def scan():
         #     if time_since_last_scan < timedelta(hours=24):
         #         return render_template('already_scanned.html', ...)
 
+        # Double-check right before creating the record to reduce race-condition window
+        latest_scan_check = ScanRecord.query.filter(ScanRecord.faculty_id == faculty.id, ScanRecord.scanned_at >= window_start).order_by(ScanRecord.scanned_at.desc()).first()
+        if latest_scan_check:
+            time_since_last_scan = datetime.utcnow() - latest_scan_check.scanned_at
+            next_scan_time = latest_scan_check.scanned_at + cooldown
+            print(f"Scan blocked at last-moment check for faculty {faculty.id} ({faculty.name}). Last scan at {latest_scan_check.scanned_at}")
+            return render_template('already_scanned.html', faculty=faculty, last_scan=latest_scan_check, next_scan_time=next_scan_time)
+
         scan_record = ScanRecord(faculty_id=faculty.id)
         db.session.add(scan_record)
         db.session.commit()
@@ -255,16 +263,17 @@ def get_latest_scan():
 
 @app.route('/api/recent-scans')
 def get_recent_scans():
-    try:
-        recent_scans = db.session.query(ScanRecord, Faculty)\
-            .join(Faculty, ScanRecord.faculty_id == Faculty.id)\
-            .order_by(ScanRecord.scanned_at.desc())\
-            .limit(20).all()
-        scan_data = [{'faculty_name': f.name, 'faculty_phone_number': f.phone_number, 'faculty_department': f.department, 'scanned_at': sr.scanned_at.strftime('%Y-%m-%d %H:%M:%S'), 'scan_id': sr.id, 'timestamp': sr.scanned_at.timestamp()} for sr, f in recent_scans]
-        return jsonify(scan_data)
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch recent scans'}), 500
-
+        # Enforce a 6-hour cooldown between scans to prevent duplicates
+        # Check if any scan exists for this faculty within the cooldown window
+        cooldown = timedelta(hours=6)
+        window_start = datetime.utcnow() - cooldown
+        recent_scan = ScanRecord.query.filter(ScanRecord.faculty_id == faculty.id, ScanRecord.scanned_at >= window_start).order_by(ScanRecord.scanned_at.desc()).first()
+        if recent_scan:
+            time_since_last_scan = datetime.utcnow() - recent_scan.scanned_at
+            next_scan_time = recent_scan.scanned_at + cooldown
+            # Log helpful debug info
+            print(f"Scan blocked for faculty {faculty.id} ({faculty.name}). Last scan at {recent_scan.scanned_at}, {time_since_last_scan} ago. Next allowed at {next_scan_time}")
+            return render_template('already_scanned.html', faculty=faculty, last_scan=recent_scan, next_scan_time=next_scan_time)
 @app.route("/counter")
 def show_counter():
     try:
