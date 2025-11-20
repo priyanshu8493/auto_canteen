@@ -206,8 +206,24 @@ def scan():
         return redirect(url_for('scan_success', _external=False))
         
     except Exception as e:
+        # Rollback DB changes and log full traceback for debugging
         db.session.rollback()
-        return render_template('success.html', title="Error", message="Scan failed. Please try again.")
+        import traceback
+        tb = traceback.format_exc()
+        # Print traceback to console (visible in systemd or process output)
+        print("--- Scan route exception traceback ---")
+        print(tb)
+        # Also append traceback to a log file for later inspection
+        try:
+            with open(os.path.join(os.path.dirname(__file__), 'auto_canteen.log'), 'a') as lf:
+                lf.write(f"[{datetime.utcnow().isoformat()}] Scan exception: {str(e)}\n")
+                lf.write(tb + "\n")
+        except Exception as log_e:
+            print('Failed to write to auto_canteen.log:', log_e)
+
+        # Return a helpful message containing the exception (temporary for debugging)
+        # NOTE: remove or sanitize detailed exception messages in production
+        return render_template('success.html', title="Scan Error", message=f"Scan failed: {str(e)}")
 
 @app.route('/scan-success')
 def scan_success():
