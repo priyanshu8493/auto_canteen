@@ -353,6 +353,10 @@
         function initializeSocketIO() {
             try {
                 // Configure Socket.IO for reverse proxy environments
+                // Compute base path (e.g. '/auto_canteen') from the current pathname to form correct socket.io path
+                const pathParts = window.location.pathname.split('/');
+                const basePath = (pathParts.length > 1 && pathParts[1]) ? '/' + pathParts[1] : '';
+                const socketPath = basePath + '/socket.io/';
                 const socketConfig = {
                     transports: ['websocket', 'polling'],
                     reconnection: true,
@@ -360,7 +364,7 @@
                     reconnectionDelayMax: 5000,
                     reconnectionAttempts: Infinity,
                     // For Nginx reverse proxy with Cloudflare
-                    path: window.location.pathname + 'socket.io/',
+                    path: socketPath,
                     secure: window.location.protocol === 'https:',
                     rejectUnauthorized: false
                 };
