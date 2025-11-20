@@ -3,7 +3,7 @@
 ## Issue Fixed
 **Problem:** Faculties were unable to scan for another meal after their first scan yesterday due to a 24-hour scan constraint.
 
-**Solution:** Removed the 24-hour constraint from the `/scan` route while preserving all existing scan data.
+**Solution:** Replaced the previous 24-hour constraint with a 6-hour cooldown in the `/scan` route while preserving all existing scan data.
 
 ## Changes Made
 
@@ -24,11 +24,10 @@ if last_scan:
 ```
 
 **What happens now:**
-- Faculties can scan **unlimited times** per day
-- No time-based restrictions
-- All new scans are recorded and counted
-- Counter increments for every scan
-- Voice announcements play for each meal served
+- Faculties can scan again only after a **6-hour cooldown** from their last successful scan
+- New scans are recorded and counted once the cooldown expires
+- Counter increments for each allowed scan
+- Voice announcements play for each allowed meal served
 
 ## Data Integrity
 
@@ -92,8 +91,8 @@ Show scan_success page
 ```bash
 # Simulate same faculty scanning 3 times
 # 1. First scan at time T₁ → counter = 1
-# 2. Second scan at time T₂ → counter = 2  
-# 3. Third scan at time T₃ → counter = 3
+# 2. Second scan at time T₂ (if T₂ - T₁ < 6 hours) → blocked, page shows next_scan_time
+# 3. Second scan at time T₃ (if T₃ - T₁ >= 6 hours) → allowed, counter increments
 ```
 
 ## Database Queries (if needed)
