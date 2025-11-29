@@ -1,6 +1,7 @@
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit
@@ -199,7 +200,8 @@ def scan():
         current_count = increment_meal_counter()
         socketio.emit('counter_update', {'count': current_count}, namespace='/')
         
-        return redirect(url_for('scan_success', _external=False))
+        # Redirect to scan success with the created scan id so we can show timestamp
+        return redirect(url_for('scan_success', scan_id=scan_record.id, _external=False))
         
     except Exception as e:
         # Rollback DB changes and log full traceback for debugging
@@ -227,7 +229,17 @@ def scan_success():
     if faculty_id:
         faculty = Faculty.query.get(faculty_id)
         if faculty:
-            return render_template('scan_success.html', faculty=faculty)
+            # Optionally show the recorded scan timestamp in IST if provided via query param
+            scan_id = request.args.get('scan_id')
+            scanned_at_ist = None
+            if scan_id:
+                scan_record = ScanRecord.query.get(scan_id)
+                if scan_record and scan_record.scanned_at:
+                    # The DB timestamp is UTC (naive), mark as UTC then convert to IST
+                    scanned_utc = scan_record.scanned_at.replace(tzinfo=timezone.utc)
+                    scanned_ist_dt = scanned_utc.astimezone(ZoneInfo('Asia/Kolkata'))
+                    scanned_at_ist = scanned_ist_dt.strftime('%Y-%m-%d %I:%M %p')
+            return render_template('scan_success.html', faculty=faculty, scanned_at_ist=scanned_at_ist)
     return redirect(url_for('register', _external=False))
 
 @app.route('/dashboard')

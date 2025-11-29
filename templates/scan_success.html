@@ -10,6 +10,9 @@
     <div class="alert alert-success">
         <p style="margin: 0;"><strong>Welcome, {{ faculty.name }}!</strong></p>
         <p style="margin: 0.5rem 0 0 0;">Enjoy your lunch.</p>
+        {% if scanned_at_ist %}
+        <p style="margin: 0.5rem 0 0 0; font-size: 0.95rem; color: #0b6e0b;">Recorded at: {{ scanned_at_ist }} (IST)</p>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
