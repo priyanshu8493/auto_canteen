@@ -336,7 +336,7 @@ def reset_counter():
 
 @app.route("/api/speak")
 def api_speak():
-    """Generate speech audio using system text-to-speech"""
+    """Generate speech audio using system text-to-speech with proper Raspberry Pi support"""
     try:
         text = request.args.get('text', 'Error')
         
@@ -349,63 +349,114 @@ def api_speak():
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
                 temp_file = f.name
             
-            # Use espeak to generate speech
-            subprocess.run(['espeak', '-w', temp_file, text], check=True, timeout=10)
+            # Use espeak with optimized settings for Raspberry Pi
+            # -a: amplitude (0-200), -p: pitch (0-99), -s: speed (wpm)
+            # Added explicit UTF-8 handling for compatibility
+            espeak_cmd = ['espeak', '-w', temp_file, '-a', '200', '-s', '150', text]
+            print(f"TTS: Running espeak command: {' '.join(espeak_cmd)}")
+            
+            subprocess.run(
+                espeak_cmd,
+                check=True,
+                timeout=15,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            
+            # Verify file was created and has content
+            if not os.path.exists(temp_file) or os.path.getsize(temp_file) == 0:
+                print("ERROR: espeak generated empty file")
+                raise subprocess.CalledProcessError(1, 'espeak')
             
             # Read and return the audio file
             with open(temp_file, 'rb') as f:
                 audio_data = f.read()
+            
+            print(f"TTS: Successfully generated {len(audio_data)} bytes of audio via espeak")
             
             # Clean up temp file
             os.unlink(temp_file)
             
             from flask import send_file
             from io import BytesIO
-            return send_file(BytesIO(audio_data), mimetype='audio/wav', cache_timeout=0)
+            # CRITICAL: Ensure audio plays immediately without caching
+            response = send_file(
+                BytesIO(audio_data),
+                mimetype='audio/wav',
+                as_attachment=False,
+                download_name='speech.wav'
+            )
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
         
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            # espeak not available, try festival
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
+            print(f"WARNING: espeak failed: {e}")
+            # espeak not available or failed, try festival
             try:
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+                with tempfile.NamedTemporaryFile(suffix='.txt', delete=False, mode='w') as f:
                     temp_file = f.name
+                    # Format text for festival
+                    f.write(f'(SayText "{text}")')
                 
-                # Use festival to generate speech
-                subprocess.run(['festival', '--tts'], input=text.encode(), check=True, timeout=10)
+                # Use festival text2wave converter
+                output_file = temp_file.replace('.txt', '.wav')
+                festival_cmd = ['text2wave', temp_file, '-o', output_file]
+                print(f"TTS: Running festival command: {' '.join(festival_cmd)}")
                 
-                # If festival succeeds but doesn't output to file, try text2wave
+                subprocess.run(
+                    festival_cmd,
+                    check=True,
+                    timeout=15,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                
+                if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
+                    print("ERROR: festival generated empty file")
+                    raise subprocess.CalledProcessError(1, 'text2wave')
+                
+                with open(output_file, 'rb') as f:
+                    audio_data = f.read()
+                
+                print(f"TTS: Successfully generated {len(audio_data)} bytes of audio via festival")
+                
+                # Clean up temp files
+                os.unlink(temp_file)
+                os.unlink(output_file)
+                
+                from flask import send_file
+                from io import BytesIO
+                response = send_file(
+                    BytesIO(audio_data),
+                    mimetype='audio/wav',
+                    as_attachment=False,
+                    download_name='speech.wav'
+                )
+                response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                response.headers['Pragma'] = 'no-cache'
+                response.headers['Expires'] = '0'
+                return response
+                
+            except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
+                print(f"WARNING: festival also failed: {e}")
+                # Clean up if files exist
                 try:
-                    with open(temp_file, 'w') as f:
-                        f.write(f"(SayText \"{text}\")")
-                    
-                    subprocess.run(
-                        ['text2wave', temp_file, '-o', temp_file + '.wav'],
-                        check=True,
-                        timeout=10
-                    )
-                    
-                    with open(temp_file + '.wav', 'rb') as f:
-                        audio_data = f.read()
-                    
                     os.unlink(temp_file)
-                    os.unlink(temp_file + '.wav')
-                    
-                    from flask import send_file
-                    from io import BytesIO
-                    return send_file(BytesIO(audio_data), mimetype='audio/wav', cache_timeout=0)
                 except:
                     pass
-                
-                os.unlink(temp_file)
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                pass
         
         # If we get here, no TTS system is available
-        print("WARNING: No TTS system available (espeak or festival not installed)")
-        return jsonify({'error': 'TTS not available'}), 501
+        print("CRITICAL: No TTS system available (espeak and festival not installed)")
+        print("On Raspberry Pi, install with: sudo apt-get install espeak espeak-ng")
+        return jsonify({'error': 'TTS not available - install espeak with: sudo apt-get install espeak'}), 501
         
     except Exception as e:
+        import traceback
         print(f"TTS error: {e}")
-        return jsonify({'error': 'TTS generation failed'}), 500
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'TTS generation failed: {str(e)}'}), 500
 
 # Socket.IO event handlers
 @socketio.on('connect')

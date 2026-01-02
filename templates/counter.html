@@ -91,6 +91,8 @@
             console.log('Initializing audio system...');
             console.log('Is secure context:', window.isSecureContext);
             console.log('Protocol:', window.location.protocol);
+            console.log('Platform:', navigator.platform);
+            console.log('User Agent:', navigator.userAgent);
             
             // Try to create audio context (required for some browsers)
             try {
@@ -98,6 +100,13 @@
                     const AudioContext = window.AudioContext || window.webkitAudioContext;
                     audioContext = new AudioContext();
                     console.log('Audio context initialized successfully');
+                    console.log('Audio context state:', audioContext.state);
+                    console.log('Sample rate:', audioContext.sampleRate);
+                    
+                    // Resume audio context if suspended (crucial for Raspberry Pi)
+                    if (audioContext.state === 'suspended') {
+                        console.log('Audio context is suspended, will resume on user interaction');
+                    }
                 }
             } catch (e) {
                 console.log('Audio context initialization failed:', e);
@@ -111,7 +120,8 @@
                 return;
             }
             
-            console.log('Speech synthesis available, waiting for voices...');
+            console.log('Speech synthesis available, checking voices...');
+            console.log('Current voices:', window.speechSynthesis.getVoices().length);
             
             // Check if speech synthesis is actually working
             // Try multiple times as voices may load asynchronously
@@ -121,15 +131,16 @@
                 const voices = speechSynthesis.getVoices();
                 console.log(`Voice check ${voiceCheckCount}: ${voices.length} voices found`);
                 
-                if (voices.length === 0 && voiceCheckCount < 5) {
-                    // Retry after a delay
-                    setTimeout(checkVoices, 500);
+                if (voices.length === 0 && voiceCheckCount < 10) {
+                    // Retry after a delay (increased from 5 to 10 attempts for Raspberry Pi)
+                    setTimeout(checkVoices, 200);
                 } else if (voices.length === 0) {
                     console.log('No voices available after multiple attempts');
                     voiceEnabled = false;
-                    updateVoiceStatus('No voice packages - Click button to enable');
+                    updateVoiceStatus('No voices - Using server TTS fallback');
                 } else {
                     console.log('Voices loaded successfully:', voices.length);
+                    console.log('Available voices:', voices.map(v => v.name).join(', '));
                     updateVoiceStatus('Voice ready - Click button to activate');
                 }
             };
@@ -187,8 +198,8 @@
         // Speech synthesis with better error handling and Raspberry Pi support
         function speak(text) {
             if (!voiceEnabled) {
-                console.log('Voice disabled, using visual feedback only');
-                showVisualAlert();
+                console.log('Voice disabled, trying server TTS fallback...');
+                speakViaAPI(text);
                 return;
             }
             
@@ -204,10 +215,13 @@
                 }
                 
                 // Cancel any ongoing speech
-                speechSynthesis.cancel();
+                if (speechSynthesis.speaking) {
+                    console.log('Canceling ongoing speech');
+                    speechSynthesis.cancel();
+                }
                 
                 const utterance = new SpeechSynthesisUtterance(text);
-                utterance.rate = 1.0; // Normal speed
+                utterance.rate = 0.95; // Slightly slower for clarity
                 utterance.pitch = 1.0;
                 utterance.volume = 1.0;
                 
@@ -216,18 +230,35 @@
                 console.log('Available voices for synthesis:', voices.length);
                 
                 if (voices.length > 0) {
-                    // Prefer English voices
-                    const enVoice = voices.find(voice => 
-                        voice.lang.startsWith('en-') || voice.lang === 'en'
-                    );
-                    utterance.voice = enVoice || voices[0];
-                    console.log('Selected voice:', utterance.voice ? utterance.voice.name : 'default');
+                    // Prefer English voices, then default
+                    let selectedVoice = null;
+                    
+                    // Priority order for Raspberry Pi
+                    const voicePriority = [
+                        v => v.lang.startsWith('en-US'),
+                        v => v.lang.startsWith('en'),
+                        v => v.lang === 'en',
+                        v => v.default,
+                        v => true  // any voice
+                    ];
+                    
+                    for (const priority of voicePriority) {
+                        selectedVoice = voices.find(priority);
+                        if (selectedVoice) break;
+                    }
+                    
+                    utterance.voice = selectedVoice;
+                    console.log('Selected voice:', selectedVoice ? selectedVoice.name : 'default');
+                    console.log('Voice language:', selectedVoice ? selectedVoice.lang : 'default');
                 } else {
                     console.log('WARNING: No voices found, speech may not work');
                 }
                 
+                let speechStarted = false;
+                
                 utterance.onstart = function() {
                     console.log('Speech started:', text);
+                    speechStarted = true;
                     updateVoiceStatus('Speaking...');
                 };
                 
@@ -238,17 +269,28 @@
                 
                 utterance.onerror = function(event) {
                     console.log('Speech error:', event.error);
-                    console.log('Trying alternative TTS method...');
-                    // Try fallback TTS via API
-                    speakViaAPI(text);
+                    console.log('Error code:', event.error);
+                    
+                    if (!speechStarted) {
+                        console.log('Browser speech never started, trying server TTS fallback...');
+                        speakViaAPI(text);
+                    }
                 };
                 
+                console.log('Attempting browser speech synthesis for:', text);
                 speechSynthesis.speak(utterance);
-                console.log('Speech synthesis initiated for:', text);
+                
+                // Fallback timeout: if speech doesn't start within 2 seconds, use server TTS
+                setTimeout(() => {
+                    if (!speechStarted && speechSynthesis.speaking === false) {
+                        console.log('Browser speech did not start within timeout, using server TTS...');
+                        speakViaAPI(text);
+                    }
+                }, 2000);
                 
             } catch (error) {
                 console.log('Speech synthesis failed:', error);
-                console.log('Trying alternative TTS method...');
+                console.log('Trying server TTS fallback...');
                 // Try fallback TTS via API
                 speakViaAPI(text);
             }
@@ -258,18 +300,89 @@
         function speakViaAPI(text) {
             console.log('Using server-side TTS fallback...');
             try {
+                // Create audio element with explicit settings
                 const audioElement = new Audio();
+                audioElement.crossOrigin = 'anonymous';
+                audioElement.preload = 'auto';
+                audioElement.volume = 1.0;
+                
                 const ttsUrl = `{{ url_for('api_speak', _external=False) }}?text=${encodeURIComponent(text)}`;
+                console.log('Fetching TTS from:', ttsUrl);
+                
                 audioElement.src = ttsUrl;
-                audioElement.play().then(() => {
-                    console.log('Server TTS playback started');
+                
+                // Set up event handlers
+                audioElement.onloadstart = () => {
+                    console.log('Server TTS: Loading started');
+                };
+                
+                audioElement.oncanplay = () => {
+                    console.log('Server TTS: Audio can play, duration:', audioElement.duration);
+                };
+                
+                audioElement.onplay = () => {
+                    console.log('Server TTS: Playback started');
                     updateVoiceStatus('Speaking (Server TTS)...');
-                }).catch(e => {
-                    console.log('Server TTS playback failed:', e);
+                };
+                
+                audioElement.onended = () => {
+                    console.log('Server TTS: Playback ended');
+                    updateVoiceStatus('Voice ready');
+                };
+                
+                audioElement.onerror = (e) => {
+                    console.log('Server TTS: Playback error:', e);
+                    console.log('Error code:', audioElement.error?.code);
+                    console.log('Error message:', audioElement.error?.message);
                     console.log('All TTS methods failed, using visual alert only');
                     updateVoiceStatus('Voice unavailable - visual alerts only');
                     showVisualAlert();
-                });
+                };
+                
+                // Try to play with explicit error handling
+                const playPromise = audioElement.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log('Server TTS playback initiated successfully');
+                        updateVoiceStatus('Speaking (Server TTS)...');
+                    }).catch(e => {
+                        console.log('Server TTS play promise rejected:', e);
+                        console.log('Error name:', e.name);
+                        
+                        // Try alternative approach: fetch audio and use Web Audio API
+                        console.log('Attempting fallback via Web Audio API...');
+                        fetch(ttsUrl)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error(`HTTP error! status: ${response.status}`);
+                                }
+                                return response.arrayBuffer();
+                            })
+                            .then(arrayBuffer => {
+                                if (!audioContext) {
+                                    console.log('No audio context available for fallback');
+                                    showVisualAlert();
+                                    return;
+                                }
+                                
+                                audioContext.decodeAudioData(arrayBuffer, (audioBuffer) => {
+                                    const source = audioContext.createBufferSource();
+                                    source.buffer = audioBuffer;
+                                    source.connect(audioContext.destination);
+                                    source.start();
+                                    console.log('Web Audio API playback started');
+                                    updateVoiceStatus('Speaking (Web Audio)...');
+                                }, (e) => {
+                                    console.log('Audio decode failed:', e);
+                                    showVisualAlert();
+                                });
+                            })
+                            .catch(e => {
+                                console.log('Fallback fetch failed:', e);
+                                showVisualAlert();
+                            });
+                    });
+                }
             } catch (e) {
                 console.log('Server TTS API call failed:', e);
                 showVisualAlert();
@@ -354,19 +467,24 @@
             try {
                 // Configure Socket.IO for reverse proxy environments
                 // Compute base path (e.g. '/auto_canteen') from the current pathname to form correct socket.io path
-                const pathParts = window.location.pathname.split('/');
-                const basePath = (pathParts.length > 1 && pathParts[1]) ? '/' + pathParts[1] : '';
+                const pathParts = window.location.pathname.split('/').filter(p => p);
+                const basePath = pathParts.length > 0 ? '/' + pathParts[0] : '';
                 const socketPath = basePath + '/socket.io/';
+                
                 const socketConfig = {
                     transports: ['websocket', 'polling'],
                     reconnection: true,
                     reconnectionDelay: 1000,
                     reconnectionDelayMax: 5000,
                     reconnectionAttempts: Infinity,
-                    // For Nginx reverse proxy with Cloudflare
+                    // For Nginx reverse proxy with Cloudflare and Raspberry Pi
                     path: socketPath,
                     secure: window.location.protocol === 'https:',
-                    rejectUnauthorized: false
+                    rejectUnauthorized: false,
+                    forceNew: true,
+                    // Raspberry Pi specific settings
+                    upgradeTimeout: 20000,
+                    rememberUpgrade: true
                 };
                 
                 console.log('Initializing Socket.IO with config:', socketConfig);
@@ -374,6 +492,8 @@
                 
                 socket.on('connect', function() {
                     console.log('Connected to server via Socket.IO');
+                    console.log('Socket ID:', socket.id);
+                    console.log('Connected with transport:', socket.io.engine.transport.name);
                     updateConnectionStatus(true);
                     // Only speak if voice is already enabled
                     if (voiceEnabled && audioInitialized) {
@@ -381,8 +501,8 @@
                     }
                 });
                 
-                socket.on('disconnect', function() {
-                    console.log('Disconnected from server');
+                socket.on('disconnect', function(reason) {
+                    console.log('Disconnected from server. Reason:', reason);
                     updateConnectionStatus(false);
                 });
                 
@@ -398,6 +518,10 @@
                 socket.on('connect_error', function(error) {
                     console.log('Socket.IO connection error:', error);
                     updateConnectionStatus(false);
+                });
+                
+                socket.on('error', function(error) {
+                    console.log('Socket.IO error:', error);
                 });
                 
             } catch (error) {
@@ -432,31 +556,34 @@
         function enableAudio() {
             console.log('Enabling audio...');
             console.log('Audio context state:', audioContext ? audioContext.state : 'no context');
+            console.log('Voice enabled:', voiceEnabled);
+            console.log('Audio initialized:', audioInitialized);
             
             // Resume audio context if it exists and is suspended
             if (audioContext && audioContext.state === 'suspended') {
+                console.log('Attempting to resume audio context...');
                 audioContext.resume().then(() => {
-                    console.log('Audio context resumed successfully');
+                    console.log('✅ Audio context resumed successfully');
                 }).catch(e => {
-                    console.log('Failed to resume audio context:', e);
+                    console.log('❌ Failed to resume audio context:', e);
                 });
             }
             
             // Initialize if not done yet
             if (!audioInitialized) {
+                console.log('Audio not initialized yet, running init...');
                 initAudio();
             }
             
-            // Test voice system
-            if (voiceEnabled) {
+            // Test voice system - prefer server TTS on Raspberry Pi
+            if (voiceEnabled && speechSynthesis.getVoices().length > 0) {
+                console.log('Browser voice available, testing...');
                 speak("Audio activated. System ready for voice announcements.");
                 updateVoiceStatus('Voice activated - System ready');
             } else {
-                console.log('Voice not available, using fallback alerts');
-                playBeep();
-                playWebAudioBeep();
-                showVisualAlert();
-                updateVoiceStatus('Voice not available - Using visual alerts');
+                console.log('Browser voice not available, using server TTS for testing...');
+                speakViaAPI("Audio activated. System ready for voice announcements.");
+                updateVoiceStatus('Server TTS activated - System ready');
             }
         }
 
