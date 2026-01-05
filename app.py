@@ -6,6 +6,11 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, m
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit
 
+
+
+
+
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///canteen.db')
@@ -73,6 +78,25 @@ class MealCounter(db.Model):
     count = db.Column(db.Integer, default=0)
     last_reset = db.Column(db.DateTime, default=datetime.utcnow)
 
+# --- Device 2 Database Models (Separate tables for second device) ---
+class Faculty2(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = db.Column(db.String(100), nullable=False)
+    phone_number = db.Column(db.String(10), unique=True, nullable=False) 
+    department = db.Column(db.String(100), nullable=False)
+    registration_date = db.Column(db.DateTime, default=datetime.utcnow)
+    scan_records = db.relationship('ScanRecord2', backref='faculty', lazy=True)
+
+class ScanRecord2(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    faculty_id = db.Column(db.String(36), db.ForeignKey('faculty2.id'), nullable=False)
+    scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class MealCounter2(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    count = db.Column(db.Integer, default=0)
+    last_reset = db.Column(db.DateTime, default=datetime.utcnow)
+
 # --- Helper functions ---
 def get_meal_counter():
     counter = MealCounter.query.first()
@@ -92,6 +116,35 @@ def get_latest_scan_from_db():
     latest_scan_record = ScanRecord.query.join(Faculty).order_by(ScanRecord.scanned_at.desc()).first()
     if latest_scan_record:
         faculty = Faculty.query.get(latest_scan_record.faculty_id)
+        return {
+            'faculty_name': faculty.name,
+            'faculty_phone_number': faculty.phone_number,
+            'faculty_department': faculty.department,
+            'scanned_at': latest_scan_record.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'scan_id': latest_scan_record.id,
+            'timestamp': latest_scan_record.scanned_at.timestamp()
+        }
+    return None
+
+# --- Helper functions for Device 2 ---
+def get_meal_counter2():
+    counter = MealCounter2.query.first()
+    if not counter:
+        counter = MealCounter2(count=0)
+        db.session.add(counter)
+        db.session.commit()
+    return counter
+
+def increment_meal_counter2():
+    counter = get_meal_counter2()
+    counter.count += 1
+    db.session.commit()
+    return counter.count
+
+def get_latest_scan_from_db2():
+    latest_scan_record = ScanRecord2.query.join(Faculty2).order_by(ScanRecord2.scanned_at.desc()).first()
+    if latest_scan_record:
+        faculty = Faculty2.query.get(latest_scan_record.faculty_id)
         return {
             'faculty_name': faculty.name,
             'faculty_phone_number': faculty.phone_number,
@@ -193,7 +246,7 @@ def scan():
             'timestamp': scan_record.scanned_at.timestamp()
         }
         
-        # Emit to all connected clients
+        # Emit to all connected clients on default namespace
         socketio.emit('new_scan', latest_scan_data, namespace='/')
         
         # Increment counter and emit update
@@ -241,6 +294,136 @@ def scan_success():
                     scanned_at_ist = scanned_ist_dt.strftime('%Y-%m-%d %I:%M %p')
             return render_template('scan_success.html', faculty=faculty, scanned_at_ist=scanned_at_ist)
     return redirect(url_for('register', _external=False))
+
+# --- Device 2 Routes (Completely separate from Device 1) ---
+@app.route('/register2', methods=['GET', 'POST'])
+def register2():
+    if request.method == 'POST':
+        try:
+            name = request.form.get('name', '').strip()
+            phone_number = request.form.get('phone_number', '').strip()
+            department = request.form.get('department', '').strip()
+
+            if not all([name, phone_number, department]):
+                return render_template('register.html', error="All fields are required")
+
+            existing_faculty = Faculty2.query.filter_by(phone_number=phone_number).first()
+            if existing_faculty:
+                response = make_response(redirect(url_for('register2_success', _external=False)))
+                response.set_cookie('faculty_id_2', existing_faculty.id, max_age=60*60*24*365, secure=True, httponly=True, samesite='Lax')
+                return response
+
+            faculty = Faculty2(name=name, phone_number=phone_number, department=department)
+            db.session.add(faculty)
+            db.session.commit()
+
+            response = make_response(redirect(url_for('register2_success', _external=False)))
+            response.set_cookie('faculty_id_2', faculty.id, max_age=60*60*24*365, secure=True, httponly=True, samesite='Lax')
+            return response
+            
+        except Exception as e:
+            db.session.rollback()
+            return render_template('register.html', error="Registration failed. Please try again.")
+
+    return render_template('register.html')
+
+@app.route('/register2-success')
+def register2_success():
+    faculty_id = request.cookies.get('faculty_id_2')
+    if faculty_id:
+        faculty = Faculty2.query.get(faculty_id)
+        if faculty:
+            return render_template('register_success.html', faculty=faculty)
+    return redirect(url_for('register2', _external=False))
+
+@app.route('/scan2')
+def scan2():
+    try:
+        faculty_id = request.cookies.get('faculty_id_2')
+        
+        if not faculty_id:
+            return redirect(url_for('register2', _external=False))
+        
+        faculty = Faculty2.query.get(faculty_id)
+        if not faculty:
+            response = make_response(redirect(url_for('register2', _external=False)))
+            response.set_cookie('faculty_id_2', '', expires=0)
+            return response
+
+        # Enforce a 6-hour cooldown between scans to prevent duplicates
+        cooldown = timedelta(hours=6)
+        window_start = datetime.utcnow() - cooldown
+        # Check for any scan within the cooldown window
+        recent_scan = ScanRecord2.query.filter(ScanRecord2.faculty_id == faculty.id, ScanRecord2.scanned_at >= window_start).order_by(ScanRecord2.scanned_at.desc()).first()
+        if recent_scan:
+            time_since_last_scan = datetime.utcnow() - recent_scan.scanned_at
+            next_scan_time = recent_scan.scanned_at + cooldown
+            print(f"Scan blocked for faculty {faculty.id} ({faculty.name}). Last scan at {recent_scan.scanned_at}, {time_since_last_scan} ago. Next allowed at {next_scan_time}")
+            return render_template('already_scanned.html', faculty=faculty, last_scan=recent_scan, next_scan_time=next_scan_time)
+
+        # No recent scan found in the cooldown window; create a new scan record
+        scan_record = ScanRecord2(faculty_id=faculty.id)
+        db.session.add(scan_record)
+        db.session.commit()
+        
+        # Emit socket events for real-time updates on device 2 namespace
+        latest_scan_data = {
+            'faculty_name': faculty.name,
+            'faculty_phone_number': faculty.phone_number,
+            'faculty_department': faculty.department,
+            'scanned_at': scan_record.scanned_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'scan_id': scan_record.id,
+            'timestamp': scan_record.scanned_at.timestamp()
+        }
+        
+        # Emit to device 2 namespace only
+        socketio.emit('new_scan', latest_scan_data, namespace='/device2')
+        
+        # Increment counter and emit update
+        current_count = increment_meal_counter2()
+        socketio.emit('counter_update', {'count': current_count}, namespace='/device2')
+        
+        # Redirect to scan success with the created scan id so we can show timestamp
+        return redirect(url_for('scan2_success', scan_id=scan_record.id, _external=False))
+        
+    except Exception as e:
+        # Rollback DB changes and log full traceback for debugging
+        db.session.rollback()
+        import traceback
+        tb = traceback.format_exc()
+        # Print traceback to console (visible in systemd or process output)
+        print("--- Scan2 route exception traceback ---")
+        print(tb)
+        # Also append traceback to a log file for later inspection
+        try:
+            with open(os.path.join(os.path.dirname(__file__), 'auto_canteen.log'), 'a') as lf:
+                lf.write(f"[{datetime.utcnow().isoformat()}] Scan2 exception: {str(e)}\n")
+                lf.write(tb + "\n")
+        except Exception as log_e:
+            print('Failed to write to auto_canteen.log:', log_e)
+
+        # Return a helpful message containing the exception (temporary for debugging)
+        # NOTE: remove or sanitize detailed exception messages in production
+        return render_template('success.html', title="Scan Error", message=f"Scan failed: {str(e)}")
+
+@app.route('/scan2-success')
+def scan2_success():
+    faculty_id = request.cookies.get('faculty_id_2')
+    if faculty_id:
+        faculty = Faculty2.query.get(faculty_id)
+        if faculty:
+            # Optionally show the recorded scan timestamp in IST if provided via query param
+            scan_id = request.args.get('scan_id')
+            scanned_at_ist = None
+            if scan_id:
+                scan_record = ScanRecord2.query.get(scan_id)
+                if scan_record and scan_record.scanned_at:
+                    # The DB timestamp is UTC (naive), mark as UTC then convert to IST
+                    scanned_utc = scan_record.scanned_at.replace(tzinfo=timezone.utc)
+                    scanned_ist_dt = scanned_utc.astimezone(ZoneInfo('Asia/Kolkata'))
+                    scanned_at_ist = scanned_ist_dt.strftime('%Y-%m-%d %I:%M %p')
+            return render_template('scan_success.html', faculty=faculty, scanned_at_ist=scanned_at_ist)
+    return redirect(url_for('register2', _external=False))
 
 @app.route('/dashboard')
 def dashboard():
@@ -304,6 +487,14 @@ def show_counter():
     except Exception as e:
         return render_template('success.html', title="Error", message="Failed to load counter")
 
+@app.route("/counter2")
+def show_counter2():
+    try:
+        counter = get_meal_counter2()
+        return render_template("counter2.html", count=counter.count)
+    except Exception as e:
+        return render_template('success.html', title="Error", message="Failed to load counter2")
+
 @app.route("/audio-diagnostic")
 def audio_diagnostic():
     try:
@@ -319,6 +510,14 @@ def api_counter():
     except Exception as e:
         return jsonify({'error': 'Failed to fetch counter'}), 500
 
+@app.route("/api/counter2")
+def api_counter2():
+    try:
+        counter = get_meal_counter2()
+        return jsonify({"count": counter.count})
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch counter2'}), 500
+
 @app.route("/reset-counter", methods=["POST"])
 def reset_counter():
     try:
@@ -333,6 +532,21 @@ def reset_counter():
     except Exception as e:
         db.session.rollback()
         return render_template('success.html', title="Error", message="Failed to reset counter")
+
+@app.route("/reset-counter2", methods=["POST"])
+def reset_counter2():
+    try:
+        counter = get_meal_counter2()
+        counter.count = 0
+        counter.last_reset = datetime.utcnow()
+        db.session.commit()
+        
+        # Emit counter reset to device2 namespace only
+        socketio.emit('counter_update', {'count': 0}, namespace='/device2')
+        return redirect(url_for("show_counter2", _external=False))
+    except Exception as e:
+        db.session.rollback()
+        return render_template('success.html', title="Error", message="Failed to reset counter2")
 
 @app.route("/api/speak")
 def api_speak():
@@ -468,6 +682,17 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     print(f"Client disconnected: {request.sid}")
+
+# Socket.IO event handlers for Device 2 (separate namespace)
+@socketio.on('connect', namespace='/device2')
+def handle_connect_device2():
+    print(f"Device2 client connected: {request.sid}")
+    # Send current counter value to newly connected device2 client
+    emit('counter_update', {'count': get_meal_counter2().count}, namespace='/device2')
+
+@socketio.on('disconnect', namespace='/device2')
+def handle_disconnect_device2():
+    print(f"Device2 client disconnected: {request.sid}")
 
 # Initialize database
 with app.app_context():

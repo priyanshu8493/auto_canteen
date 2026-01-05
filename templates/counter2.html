@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Meal Counter</title>
+    <title>Meal Counter - Device 2</title>
     <style>
         body {
             background-color: black;
@@ -105,6 +105,15 @@
                 transform: translate(-50%, -50%) scale(0.5);
             }
         }
+        .device-indicator {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            background-color: #007bff;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
     </style>
     
     <!-- Preload audio elements -->
@@ -125,7 +134,7 @@
             if (audioInitialized) return;
             audioInitialized = true;
             
-            console.log('Initializing audio system...');
+            console.log('Initializing audio system (Device 2)...');
             console.log('Is secure context:', window.isSecureContext);
             console.log('Protocol:', window.location.protocol);
             console.log('Platform:', navigator.platform);
@@ -464,7 +473,7 @@
         function updateConnectionStatus(isConnected) {
             const statusEl = document.getElementById('connection-status');
             if (isConnected) {
-                statusEl.textContent = '🟢 Live - Connected to Dashboard';
+                statusEl.textContent = '🟢 Live - Connected to Device 2';
                 statusEl.className = 'connected';
             } else {
                 statusEl.textContent = '🔴 Offline - No Connection';
@@ -512,7 +521,7 @@
         // Refresh count from API
         async function refreshCount() {
             try {
-                const res = await fetch("{{ url_for('api_counter', _external=False) }}");
+                const res = await fetch("{{ url_for('api_counter2', _external=False) }}");
                 const data = await res.json();
                 handleCounterUpdate(data.count);
                 updateConnectionStatus(true);
@@ -544,20 +553,22 @@
                     forceNew: true,
                     // Raspberry Pi specific settings
                     upgradeTimeout: 20000,
-                    rememberUpgrade: true
+                    rememberUpgrade: true,
+                    // Connect to device2 namespace
+                    namespace: '/device2'
                 };
                 
-                console.log('Initializing Socket.IO with config:', socketConfig);
+                console.log('Initializing Socket.IO (Device 2) with config:', socketConfig);
                 socket = io(socketConfig);
                 
                 socket.on('connect', function() {
-                    console.log('Connected to server via Socket.IO');
+                    console.log('Connected to server via Socket.IO (Device 2)');
                     console.log('Socket ID:', socket.id);
                     console.log('Connected with transport:', socket.io.engine.transport.name);
                     updateConnectionStatus(true);
                     // Only speak if voice is already enabled
                     if (voiceEnabled && audioInitialized) {
-                        speak("Counter connected");
+                        speak("Device two counter connected");
                     }
                 });
                 
@@ -567,12 +578,12 @@
                 });
                 
                 socket.on('counter_update', function(data) {
-                    console.log('Counter update received:', data);
+                    console.log('Counter update received (Device 2):', data);
                     handleCounterUpdate(data.count);
                 });
                 
                 socket.on('new_scan', function(scanData) {
-                    console.log('New scan detected:', scanData);
+                    console.log('New scan detected (Device 2):', scanData);
                     // Show pop-up alert with faculty name
                     if (scanData.faculty_name) {
                         showScanPopup(scanData.faculty_name);
@@ -583,25 +594,25 @@
                 });
                 
                 socket.on('connect_error', function(error) {
-                    console.log('Socket.IO connection error:', error);
+                    console.log('Socket.IO connection error (Device 2):', error);
                     updateConnectionStatus(false);
                 });
                 
                 socket.on('error', function(error) {
-                    console.log('Socket.IO error:', error);
+                    console.log('Socket.IO error (Device 2):', error);
                 });
                 
             } catch (error) {
-                console.error('Socket.IO initialization error:', error);
+                console.error('Socket.IO initialization error (Device 2):', error);
                 updateConnectionStatus(false);
             }
         }
 
         // Reset counter with confirmation
         function resetCounter() {
-            if (confirm('Are you sure you want to reset the counter to zero?')) {
+            if (confirm('Are you sure you want to reset the Device 2 counter to zero?')) {
                 if (voiceEnabled) {
-                    speak("Counter reset to zero");
+                    speak("Device two counter reset to zero");
                 }
                 document.getElementById('reset-form').submit();
             }
@@ -610,7 +621,7 @@
         // Manual voice test
         function testVoice() {
             if (voiceEnabled) {
-                speak("Voice test. Counter system is working.");
+                speak("Voice test. Device two counter system is working.");
             } else {
                 playBeep();
                 playWebAudioBeep();
@@ -621,7 +632,7 @@
 
         // Enable audio on user interaction (required for autoplay)
         function enableAudio() {
-            console.log('Enabling audio...');
+            console.log('Enabling audio (Device 2)...');
             console.log('Audio context state:', audioContext ? audioContext.state : 'no context');
             console.log('Voice enabled:', voiceEnabled);
             console.log('Audio initialized:', audioInitialized);
@@ -645,18 +656,18 @@
             // Test voice system - prefer server TTS on Raspberry Pi
             if (voiceEnabled && speechSynthesis.getVoices().length > 0) {
                 console.log('Browser voice available, testing...');
-                speak("Audio activated. System ready for voice announcements.");
+                speak("Audio activated. Device two system ready for voice announcements.");
                 updateVoiceStatus('Voice activated - System ready');
             } else {
                 console.log('Browser voice not available, using server TTS for testing...');
-                speakViaAPI("Audio activated. System ready for voice announcements.");
+                speakViaAPI("Audio activated. Device two system ready for voice announcements.");
                 updateVoiceStatus('Server TTS activated - System ready');
             }
         }
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('Counter page loaded');
+            console.log('Device 2 Counter page loaded');
             console.log('Browser capabilities:');
             console.log('  - Secure context:', window.isSecureContext);
             console.log('  - Protocol:', window.location.protocol);
@@ -702,7 +713,7 @@
                 });
             }
             
-            console.log('Counter page initialization complete');
+            console.log('Device 2 Counter page initialization complete');
         });
     </script>
 </head>
@@ -710,7 +721,9 @@
     <!-- Visual alert overlay -->
     <div id="visual-alert"></div>
     
-    <h1>Meal Counter</h1>
+    <div class="device-indicator">Device 2</div>
+    
+    <h1>Meal Counter - Device 2</h1>
     <div id="count">{{ count }}</div>
     
     <div class="voice-status" id="voice-status">
@@ -723,7 +736,7 @@
     </div>
     
     <div class="controls">
-        <form id="reset-form" method="POST" action="{{ url_for('reset_counter', _external=False) }}">
+        <form id="reset-form" method="POST" action="{{ url_for('reset_counter2', _external=False) }}">
             <button type="button" onclick="resetCounter()">Reset Counter</button>
         </form>
     </div>
