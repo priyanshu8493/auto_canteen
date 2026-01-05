@@ -553,13 +553,12 @@
                     forceNew: true,
                     // Raspberry Pi specific settings
                     upgradeTimeout: 20000,
-                    rememberUpgrade: true,
-                    // Connect to device2 namespace
-                    namespace: '/device2'
+                    rememberUpgrade: true
                 };
                 
                 console.log('Initializing Socket.IO (Device 2) with config:', socketConfig);
-                socket = io(socketConfig);
+                // Connect to device2 namespace
+                socket = io('/device2', socketConfig);
                 
                 socket.on('connect', function() {
                     console.log('Connected to server via Socket.IO (Device 2)');
