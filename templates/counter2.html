@@ -587,8 +587,7 @@
                     if (scanData.faculty_name) {
                         showScanPopup(scanData.faculty_name);
                         // Speak the faculty name
-                        const message = "Meal served to " + scanData.faculty_name;
-                        speak(message);
+                        speak(scanData.faculty_name);
                     }
                 });
                 
