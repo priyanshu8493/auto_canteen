@@ -119,6 +119,7 @@
         let currentCount = {{ count }};
         let socket = null;
         let audioInitialized = false;
+        let isAudioPlaying = false;  // Flag to prevent overlapping audio
 
         // Initialize audio system
         function initAudio() {
@@ -240,6 +241,13 @@
                 return;
             }
             
+            // Prevent overlapping audio
+            if (isAudioPlaying) {
+                console.log('Audio already playing, queueing new speech...');
+                setTimeout(() => speak(text), 500);
+                return;
+            }
+            
             try {
                 // Resume audio context if suspended (required for Raspberry Pi)
                 if (audioContext && audioContext.state === 'suspended') {
@@ -256,6 +264,7 @@
                     console.log('Canceling ongoing speech');
                     speechSynthesis.cancel();
                 }
+                isAudioPlaying = true;
                 
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.rate = 0.95; // Slightly slower for clarity
@@ -296,11 +305,13 @@
                 utterance.onstart = function() {
                     console.log('Speech started:', text);
                     speechStarted = true;
+                    isAudioPlaying = true;
                     updateVoiceStatus('Speaking...');
                 };
                 
                 utterance.onend = function() {
                     console.log('Speech ended');
+                    isAudioPlaying = false;
                     updateVoiceStatus('Voice ready');
                 };
                 
@@ -335,7 +346,15 @@
 
         // Fallback: Use server-side TTS if browser speech fails
         function speakViaAPI(text) {
+            // Prevent overlapping audio
+            if (isAudioPlaying) {
+                console.log('Audio already playing, queueing new speech...');
+                setTimeout(() => speakViaAPI(text), 500);
+                return;
+            }
+            
             console.log('Using server-side TTS fallback...');
+            isAudioPlaying = true;
             try {
                 // Create audio element with explicit settings
                 const audioElement = new Audio();
@@ -364,6 +383,7 @@
                 
                 audioElement.onended = () => {
                     console.log('Server TTS: Playback ended');
+                    isAudioPlaying = false;
                     updateVoiceStatus('Voice ready');
                 };
                 
@@ -372,6 +392,7 @@
                     console.log('Error code:', audioElement.error?.code);
                     console.log('Error message:', audioElement.error?.message);
                     console.log('All TTS methods failed, using visual alert only');
+                    isAudioPlaying = false;
                     updateVoiceStatus('Voice unavailable - visual alerts only');
                     showVisualAlert();
                 };
@@ -555,10 +576,6 @@
                     console.log('Socket ID:', socket.id);
                     console.log('Connected with transport:', socket.io.engine.transport.name);
                     updateConnectionStatus(true);
-                    // Only speak if voice is already enabled
-                    if (voiceEnabled && audioInitialized) {
-                        speak("Counter connected");
-                    }
                 });
                 
                 socket.on('disconnect', function(reason) {
@@ -575,8 +592,13 @@
                     console.log('New scan detected:', scanData);
                     // Show pop-up alert with faculty name
                     if (scanData.faculty_name) {
+                        // Cancel any ongoing speech to prevent overlapping
+                        if (speechSynthesis.speaking) {
+                            speechSynthesis.cancel();
+                        }
+                        isAudioPlaying = false;  // Reset flag to allow new speech
                         showScanPopup(scanData.faculty_name);
-                        // Speak the faculty name
+                        // Speak ONLY the faculty name
                         speak(scanData.faculty_name);
                     }
                 });
@@ -641,14 +663,12 @@
                 initAudio();
             }
             
-            // Test voice system - prefer server TTS on Raspberry Pi
+            // Just update status without speaking (to prevent annoying announcements)
             if (voiceEnabled && speechSynthesis.getVoices().length > 0) {
-                console.log('Browser voice available, testing...');
-                speak("Audio activated. System ready for voice announcements.");
+                console.log('Browser voice available');
                 updateVoiceStatus('Voice activated - System ready');
             } else {
-                console.log('Browser voice not available, using server TTS for testing...');
-                speakViaAPI("Audio activated. System ready for voice announcements.");
+                console.log('Browser voice not available, using server TTS');
                 updateVoiceStatus('Server TTS activated - System ready');
             }
         }
