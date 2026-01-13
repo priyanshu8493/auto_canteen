@@ -534,7 +534,7 @@ def reset_counter():
         return render_template('success.html', title="Error", message="Failed to reset counter")
 
 @app.route("/reset-counter2", methods=["POST"])
-def reset_counter2():
+def reset_counter2():11
     try:
         counter = get_meal_counter2()
         counter.count = 0
